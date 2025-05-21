@@ -38,9 +38,9 @@ public class SecurityConfig {
                 .httpBasic(httpBasic -> httpBasic.disable())
                 .formLogin(formLogin -> formLogin.disable())
                 .sessionManagement(session -> session
-                        .sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+                        .sessionCreationPolicy(SessionCreationPolicy.IF_REQUIRED))
                 .authorizeHttpRequests(authorize -> authorize
-                        .requestMatchers("/", "/login/**", "/oauth2/**", "/user/profile/edit").permitAll() // 프로필 수정 페이지 경로도 permitAll에 추가
+                        .requestMatchers("/", "/login/**", "/oauth2/**", "/user/profile/edit","/calendar-test","/error").permitAll() // 프로필 수정 페이지 경로도 permitAll에 추가
                         .anyRequest().authenticated()
                 )
                 .oauth2Login(oauth2 -> oauth2
@@ -68,7 +68,7 @@ public class SecurityConfig {
 
                             if (Boolean.TRUE.equals(isNewUser)) {
                                 // 신규 가입자인 경우 프로필 수정 페이지로 리다이렉트
-                                response.sendRedirect("/user/profile/edit"); // 실제 프로필 수정 페이지 경로로 변경하세요.
+                                response.sendRedirect("/user/profile/edit"); // 실제 프로필 수정 페이지 경로로 변경 필요!!!
                             } else {
                                 // 기존 가입자는 메인 페이지로 리다이렉트
                                 response.sendRedirect("/");

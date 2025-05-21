@@ -26,7 +26,8 @@ public class RoutineService {
     @Transactional(readOnly = true)
     public List<RoutineResponseDTO> getAllRoutinesByUserId(Long userId) {
         User user = getUserById(userId);
-        List<Routine> routines = routineRepository.findAllByUserId(user);
+        // 기존 코드: List<Routine> routines = routineRepository.findAllByUserId(user);
+        List<Routine> routines = routineRepository.findAllByUser(user); // 수정된 코드
         return routines.stream()
                 .map(this::convertToRoutineResponseDTO)
                 .collect(Collectors.toList());
@@ -39,7 +40,7 @@ public class RoutineService {
         return convertToRoutineResponseDTO(routine);
     }
 
-    // 루틴 생성
+    // 루틴 생성 (아이템 포함)
     public RoutineResponseDTO createRoutine(Long userId, RoutineRequestDTO requestDTO) {
         User user = getUserById(userId);
 
@@ -47,14 +48,37 @@ public class RoutineService {
         routine.setName(requestDTO.getName());
         routine.setUser(user);
 
+        if (requestDTO.getItems() != null) {
+            for (RoutineItemRequestDTO itemRequestDTO : requestDTO.getItems()) {
+                RoutineItem item = new RoutineItem();
+                item.setName(itemRequestDTO.getName());
+                item.setDurationMinutes(itemRequestDTO.getDurationMinutes());
+                item.setFlexible(itemRequestDTO.isFlexibleTime());
+                routine.addItem(item);
+            }
+        }
+
         routineRepository.save(routine);
         return convertToRoutineResponseDTO(routine);
     }
 
-    // 루틴 수정
+    // 루틴 수정 (아이템 포함, 기존 아이템은 모두 교체됨)
     public RoutineResponseDTO updateRoutine(Long userId, Long routineId, RoutineRequestDTO requestDTO) {
         Routine routine = getRoutineWithOwnerCheck(userId, routineId);
         routine.setName(requestDTO.getName());
+
+        routine.getItems().clear();
+
+        if (requestDTO.getItems() != null) {
+            for (RoutineItemRequestDTO itemRequestDTO : requestDTO.getItems()) {
+                RoutineItem item = new RoutineItem();
+                item.setName(itemRequestDTO.getName());
+                item.setDurationMinutes(itemRequestDTO.getDurationMinutes());
+                item.setFlexible(itemRequestDTO.isFlexibleTime());
+                routine.addItem(item);
+            }
+        }
+
         routineRepository.save(routine);
         return convertToRoutineResponseDTO(routine);
     }
@@ -65,7 +89,7 @@ public class RoutineService {
         routineRepository.delete(routine);
     }
 
-    // 루틴에 아이템 추가
+    // 루틴에 아이템 추가 (개별 아이템 추가 시 사용)
     public RoutineItemDTO addRoutineItem(Long userId, Long routineId, RoutineItemRequestDTO requestDTO) {
         Routine routine = getRoutineWithOwnerCheck(userId, routineId);
 
@@ -74,10 +98,10 @@ public class RoutineService {
         item.setDurationMinutes(requestDTO.getDurationMinutes());
         item.setFlexible(requestDTO.isFlexibleTime());
 
-        routine.addItem(item); // 연관관계 설정 및 순서 자동 지정
+        routine.addItem(item);
         routineRepository.save(routine);
-
-        return convertToRoutineItemDTO(item);
+        RoutineItem savedItem = routine.getItems().get(routine.getItems().size() - 1);
+        return convertToRoutineItemDTO(savedItem);
     }
 
     // 루틴 아이템 수정
@@ -108,7 +132,6 @@ public class RoutineService {
 
         routine.getItems().remove(itemToRemove);
 
-        // 삭제 후 남은 아이템들의 순서 재조정
         for (int i = 0; i < routine.getItems().size(); i++) {
             routine.getItems().get(i).setOrderIndex(i);
         }
@@ -120,7 +143,6 @@ public class RoutineService {
     public List<RoutineItemDTO> reorderItems(Long userId, Long routineId, List<OrderChangeDTO> orderChanges) {
         Routine routine = getRoutineWithOwnerCheck(userId, routineId);
 
-        // 변경 요청된 아이템들에 대해 순서 업데이트
         Map<Long, Integer> newPositions = orderChanges.stream()
                 .collect(Collectors.toMap(OrderChangeDTO::getItemId, OrderChangeDTO::getNewPosition));
 
@@ -130,7 +152,6 @@ public class RoutineService {
             }
         }
 
-        // 순서대로 정렬
         routine.getItems().sort(Comparator.comparingInt(RoutineItem::getOrderIndex));
 
         routineRepository.save(routine);
@@ -140,13 +161,22 @@ public class RoutineService {
                 .collect(Collectors.toList());
     }
 
-    // 헬퍼 메소드: 사용자 조회
+    // 사용자의 모든 루틴 이름 조회
+    @Transactional(readOnly = true)
+    public List<String> getAllRoutineNamesByUserId(Long userId) {
+        User user = getUserById(userId);
+        // 기존 코드: List<Routine> routines = routineRepository.findAllByUserId(user);
+        List<Routine> routines = routineRepository.findAllByUser(user); // 수정된 코드
+        return routines.stream()
+                .map(Routine::getName)
+                .collect(Collectors.toList());
+    }
+
     private User getUserById(Long userId) {
         return userRepository.findById(userId)
                 .orElseThrow(() -> new IllegalArgumentException("사용자를 찾을 수 없습니다."));
     }
 
-    // 헬퍼 메소드: 루틴 조회 및 소유자 확인
     private Routine getRoutineWithOwnerCheck(Long userId, Long routineId) {
         Routine routine = routineRepository.findById(routineId)
                 .orElseThrow(() -> new IllegalArgumentException("루틴을 찾을 수 없습니다."));
@@ -154,11 +184,9 @@ public class RoutineService {
         if (!routine.getUser().getId().equals(userId)) {
             throw new IllegalArgumentException("해당 루틴에 접근 권한이 없습니다.");
         }
-
         return routine;
     }
 
-    // 변환 메소드: Routine -> RoutineResponseDTO
     private RoutineResponseDTO convertToRoutineResponseDTO(Routine routine) {
         RoutineResponseDTO responseDTO = new RoutineResponseDTO();
         responseDTO.setId(routine.getId());
@@ -171,16 +199,14 @@ public class RoutineService {
 
         responseDTO.setItems(itemDTOs);
 
-        //각 루틴 하나의 총 시간을 계산해서 반환
         int totalDuration = routine.getItems().stream()
-                .mapToInt(item -> item.getDurationMinutes())
+                .mapToInt(RoutineItem::getDurationMinutes)
                 .sum();
         responseDTO.setTotalDurationMinutes(totalDuration);
 
         return responseDTO;
     }
 
-    // 변환 메소드: RoutineItem -> RoutineItemDTO
     private RoutineItemDTO convertToRoutineItemDTO(RoutineItem item) {
         RoutineItemDTO itemDTO = new RoutineItemDTO();
         itemDTO.setId(item.getId());

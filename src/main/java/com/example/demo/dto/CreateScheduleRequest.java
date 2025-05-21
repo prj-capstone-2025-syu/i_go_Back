@@ -12,5 +12,4 @@ public class CreateScheduleRequest {
     private String location;
     private String memo;
     private String category;
-    private Long userId;
 }
