@@ -25,10 +25,9 @@ public class GoogleCalendarService {
     private static final String APPLICATION_NAME = "루틴 매니저";
     private static final JsonFactory JSON_FACTORY = GsonFactory.getDefaultInstance();
     private static final String CALENDAR_ID = "primary"; // 기본 캘린더 사용
-
-    // 실제 구현에서는 사용자별 인증 정보를 관리해야 합니다
+    
     private Credential getCredentials(String userId) {
-        // OAuth 인증 로직 구현 필요
+        // OAuth 인증 로직 구현 중
         return null;
     }
 

@@ -17,7 +17,7 @@ public class UserController {
 
     private final UserService userService;
 
-    // 현재 로그인한 사용자 정보 조회 (기존 TestController의 /me 와 유사)
+    // 현재 로그인한 사용자 정보 조회
     @GetMapping("/me")
     public ResponseEntity<?> getMyInfo(@AuthenticationPrincipal AppUser appUser) {
         if (appUser == null) {

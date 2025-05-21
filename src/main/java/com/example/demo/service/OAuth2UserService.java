@@ -14,7 +14,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.util.Collections;
-import java.util.HashMap; // HashMap import 추가
+import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
 
@@ -42,8 +42,7 @@ public class OAuth2UserService extends DefaultOAuth2UserService {
 
         if (userOptional.isPresent()) {
             user = userOptional.get();
-            // 기존 사용자 정보 업데이트 (예: 프로필 사진, 마지막 로그인 시간)
-            user.setNickname(name); // 이름이 변경되었을 수 있으므로 업데이트
+            user.setNickname(name); // 이름이 변경되었을 수 있음.(닉네임 재설정)
             user.setProfileImageUrl(picture);
             user.setLastLoginAt(LocalDateTime.now());
             userRepository.save(user);
@@ -62,11 +61,10 @@ public class OAuth2UserService extends DefaultOAuth2UserService {
             userRepository.save(user);
         }
 
-        // Spring Security가 내부적으로 사용할 OAuth2User 객체 반환
         // attributes에 isNewUser 플래그 추가
         Map<String, Object> userAttributes = new HashMap<>(originalAttributes);
         userAttributes.put("isNewUser", isNewUser);
-        // user.getId()와 같이 User 엔티티의 다른 정보도 필요하다면 여기에 추가할 수 있습니다.
+
         // userAttributes.put("userId", user.getId());
 
         return new DefaultOAuth2User(
@@ -79,7 +77,6 @@ public class OAuth2UserService extends DefaultOAuth2UserService {
     private String generateUniqueNickname(String baseNickname) {
         String nickname = baseNickname;
         int count = 1;
-        // 간단한 중복 회피 로직, 필요시 더 정교하게 구현
         while (userRepository.existsByNickname(nickname)) {
             nickname = baseNickname + count++;
         }
