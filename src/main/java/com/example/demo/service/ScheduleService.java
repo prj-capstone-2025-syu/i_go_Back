@@ -28,7 +28,7 @@ public class ScheduleService {
 
     // 루틴 기반 일정 생성
     public Schedule createFromRoutine(Long userId, Long routineId, String title, LocalDateTime startTime,
-                                      String location, String memo, String category) {
+                                      String location, String memo,String supplies, String category) {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new IllegalArgumentException("사용자를 찾을 수 없습니다. ID: " + userId));
 
@@ -53,6 +53,7 @@ public class ScheduleService {
                 .memo(memo)
                 .category(Category.valueOf(category.toUpperCase())) // Enum 변환 시 대문자로
                 .routineId(routineId)
+                .supplies(supplies)
                 .user(user) // 조회한 User 객체 사용
                 .status(Schedule.ScheduleStatus.PENDING)
                 .build();
@@ -62,6 +63,7 @@ public class ScheduleService {
             String eventId = googleCalendarService.createEvent(schedule, userId);
             schedule.setGoogleCalendarEventId(eventId);
         } catch (Exception e) {
+            //schedule.setGoogleCalendarEventId(null); 구글 캘린더 연동 실패해도 일정은 저장
             throw new RuntimeException("구글 캘린더 이벤트 생성 실패: " + e.getMessage(), e);
         }
 

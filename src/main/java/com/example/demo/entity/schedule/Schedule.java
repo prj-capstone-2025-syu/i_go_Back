@@ -31,6 +31,8 @@ public class Schedule {
 
     private String memo;
 
+    private String supplies;
+
     @Enumerated(EnumType.STRING)
     private Category category;
 

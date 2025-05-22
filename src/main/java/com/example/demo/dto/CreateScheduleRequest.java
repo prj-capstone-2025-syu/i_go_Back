@@ -11,5 +11,6 @@ public class CreateScheduleRequest {
     private LocalDateTime startTime;
     private String location;
     private String memo;
+    private String supplies;
     private String category;
 }

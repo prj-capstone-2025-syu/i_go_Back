@@ -3,6 +3,8 @@ package com.example.demo.Controller;
 import com.example.demo.dto.UserUpdateRequestDto;
 import com.example.demo.entity.entityInterface.AppUser;
 import com.example.demo.service.UserService;
+import jakarta.servlet.http.Cookie;
+import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -47,15 +49,35 @@ public class UserController {
         }
     }
 
+    // 로그아웃
+    @PostMapping("/logout")
+    public ResponseEntity<?> logout(HttpServletResponse response) {
+        // 토큰 쿠키 제거
+        Cookie cookie = new Cookie("access_token", null);
+        cookie.setMaxAge(0); // 즉시 만료
+        cookie.setPath("/");
+        cookie.setHttpOnly(true);
+        response.addCookie(cookie);
+
+        return ResponseEntity.ok(Map.of("message", "로그아웃되었습니다."));
+    }
+
     // 회원 탈퇴
     @DeleteMapping("/me")
-    public ResponseEntity<?> deleteMyAccount(@AuthenticationPrincipal AppUser appUser) {
+    public ResponseEntity<?> deleteMyAccount(@AuthenticationPrincipal AppUser appUser, HttpServletResponse response) {
         if (appUser == null) {
             return ResponseEntity.status(401).body(Map.of("message", "인증되지 않은 사용자입니다."));
         }
         try {
             userService.deleteUser(appUser.getId());
-            // TODO: 쿠키 무효화 또는 클라이언트에서 토큰 삭제 처리 필요
+
+            // 토큰 쿠키 제거
+            Cookie cookie = new Cookie("access_token", null);
+            cookie.setMaxAge(0); // 즉시 만료
+            cookie.setPath("/");
+            cookie.setHttpOnly(true);
+            response.addCookie(cookie);
+
             return ResponseEntity.ok(Map.of("message", "회원 탈퇴가 성공적으로 처리되었습니다."));
         } catch (Exception e) {
             return ResponseEntity.badRequest().body(Map.of("message", "회원 탈퇴 중 오류 발생: " + e.getMessage()));

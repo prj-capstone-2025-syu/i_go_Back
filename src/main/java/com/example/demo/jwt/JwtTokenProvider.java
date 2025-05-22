@@ -31,6 +31,10 @@ public class JwtTokenProvider {
         this.key = Keys.hmacShaKeyFor(secretKeyEncoded.getBytes());
     }
 
+    public long getExpirationHours() {
+        return (int)expirationHours / (60 * 60 * 1000); // 밀리초를 시간 단위로 변환
+    }
+
     public String createToken(String userId) {
         Date now = new Date();
         Date expiry = new Date(now.getTime() + expirationHours * 60 * 60 * 1000L);

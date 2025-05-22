@@ -32,6 +32,7 @@ public class ScheduleController {
                 request.getStartTime(),
                 request.getLocation(),
                 request.getMemo(),
+                request.getSupplies(),
                 request.getCategory()
         );
         return ResponseEntity.ok(schedule);

@@ -8,6 +8,7 @@ import jakarta.servlet.http.Cookie;
 import lombok.*;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpMethod; // HttpMethod import 추가
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
@@ -38,9 +39,10 @@ public class SecurityConfig {
                 .httpBasic(httpBasic -> httpBasic.disable())
                 .formLogin(formLogin -> formLogin.disable())
                 .sessionManagement(session -> session
-                        .sessionCreationPolicy(SessionCreationPolicy.IF_REQUIRED))
+                        .sessionCreationPolicy(SessionCreationPolicy.IF_REQUIRED)) // JWT를 사용하므로 STATELESS도 고려 가능하나, OAuth2 로그인 세션 유지를 위해 IF_REQUIRED 유지
                 .authorizeHttpRequests(authorize -> authorize
-                        .requestMatchers("/", "/login/**", "/oauth2/**", "/user/profile/edit","/calendar-test","/error").permitAll() // 프로필 수정 페이지 경로도 permitAll에 추가
+                        .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll() // 모든 OPTIONS 요청 허용
+                        .requestMatchers("/", "/login/**", "/oauth2/**", "/user/profile/edit","/calendar-test","/error").permitAll()
                         .anyRequest().authenticated()
                 )
                 .oauth2Login(oauth2 -> oauth2
@@ -48,29 +50,23 @@ public class SecurityConfig {
                                 .userService(oAuth2UserService)
                         )
                         .successHandler((request, response, authentication) -> {
-                            // OAuth2 로그인 성공 처리
                             OAuth2AuthenticationToken oauthToken = (OAuth2AuthenticationToken) authentication;
                             OAuth2User oAuth2User = oauthToken.getPrincipal();
-
-                            // 구글에서 제공하는 이메일로 JWT 토큰 생성
                             String email = oAuth2User.getAttribute("email");
                             String token = jwtTokenProvider.createToken(email);
 
-                            // JWT 토큰을 쿠키에 저장
                             Cookie cookie = new Cookie("access_token", token);
                             cookie.setPath("/");
-                            cookie.setHttpOnly(true);
-                            cookie.setMaxAge(3600); // 1시간
+                            cookie.setHttpOnly(true); // JavaScript에서 접근 불가
+                            // cookie.setSecure(true); // HTTPS에서만 전송 (배포 시 활성화)
+                            cookie.setMaxAge((int)(jwtTokenProvider.getExpirationHours() * 60 * 60));
                             response.addCookie(cookie);
 
-                            // 신규 사용자 여부 확인
                             Boolean isNewUser = oAuth2User.getAttribute("isNewUser");
 
                             if (Boolean.TRUE.equals(isNewUser)) {
-                                // 신규 가입자인 경우 프로필 수정 페이지로 리다이렉트
-                                response.sendRedirect("/user/profile/edit"); // 실제 프로필 수정 페이지 경로로 변경 필요!!!
+                                response.sendRedirect("/user/profile/edit");
                             } else {
-                                // 기존 가입자는 메인 페이지로 리다이렉트
                                 response.sendRedirect("/");
                             }
                         })
