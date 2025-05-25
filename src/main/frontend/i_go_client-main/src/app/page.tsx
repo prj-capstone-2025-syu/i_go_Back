@@ -8,7 +8,7 @@ import Link from "next/link"; // 기존 import 유지
 import { useRouter } from "next/navigation"; // App Router의 useRouter 사용
 
 // 백엔드 URL 설정
-const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8080";
+const BACKEND_URL = "";
 
 export default function Home() {
   const [keyword, setKeyword] = useState("");

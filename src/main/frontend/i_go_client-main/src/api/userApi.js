@@ -1,8 +1,8 @@
 import axios from 'axios';
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080';
+const API_URL = process.env.NEXT_PUBLIC_API_URL || '';  // 비워둠!
 const api = axios.create({
-    baseURL: `${API_URL}/api`,
+    baseURL: `/api`,  // 상대경로로!
     headers: {
         'Content-Type': 'application/json'
     },

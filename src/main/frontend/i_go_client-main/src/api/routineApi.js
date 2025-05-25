@@ -1,9 +1,9 @@
 // src/api/routineApi.js
 import axios from 'axios';
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080';
+// 환경 변수는 필요하지 않음 (상대 경로 사용)
 const api = axios.create({
-    baseURL: `${API_URL}/api`,
+    baseURL: `/api`,  // 상대 경로 유지
     headers: {
         'Content-Type': 'application/json'
     },

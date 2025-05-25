@@ -6,6 +6,7 @@ import com.example.demo.repository.UserRepository;
 import com.example.demo.service.OAuth2UserService;
 import jakarta.servlet.http.Cookie;
 import lombok.*;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod; // HttpMethod 임포트 추가
@@ -37,10 +38,13 @@ public class SecurityConfig {
         return PasswordEncoderFactories.createDelegatingPasswordEncoder();
     }
 
+    @Value("${frontend.url:http://localhost:3000}")
+    private String frontendUrl;
+
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration configuration = new CorsConfiguration();
-        configuration.setAllowedOrigins(Arrays.asList("http://localhost:3000")); // 프론트엔드 주소
+        configuration.setAllowedOrigins(Arrays.asList(frontendUrl));
         configuration.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "DELETE", "OPTIONS")); // 허용할 HTTP 메소드
         configuration.setAllowedHeaders(Arrays.asList("*")); // 모든 헤더 허용
         configuration.setAllowCredentials(true); // 쿠키 허용
@@ -84,9 +88,9 @@ public class SecurityConfig {
                             Boolean isNewUser = oAuth2User.getAttribute("isNewUser");
 
                             if (Boolean.TRUE.equals(isNewUser)) {
-                                response.sendRedirect("http://localhost:3000/user/profile/edit"); // 프론트엔드 프로필 수정 페이지로 리다이렉트
+                                response.sendRedirect(frontendUrl + "/user/profile/edit"); // 프론트엔드 프로필 수정 페이지로 리다이렉트
                             } else {
-                                response.sendRedirect("http://localhost:3000/"); // 프론트엔드 메인 페이지로 리다이렉트
+                                response.sendRedirect(frontendUrl); // 프론트엔드 메인 페이지로 리다이렉트
                             }
                         })
                 )

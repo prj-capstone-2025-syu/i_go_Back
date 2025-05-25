@@ -23,6 +23,7 @@ export default function Home() {
                 setUser(userData);
             } catch (err) {
                 console.error("사용자 정보 가져오기 실패:", err);
+                // @ts-ignore
                 setError("사용자 정보를 불러오는데 실패했습니다");
             } finally {
                 setLoading(false);
