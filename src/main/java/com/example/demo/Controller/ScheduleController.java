@@ -30,6 +30,7 @@ public class ScheduleController {
                 request.getRoutineId(),
                 request.getTitle(),
                 request.getStartTime(),
+                request.getEndTime(),
                 request.getLocation(),
                 request.getMemo(),
                 request.getSupplies(),

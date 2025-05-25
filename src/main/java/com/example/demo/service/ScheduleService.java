@@ -9,6 +9,8 @@ import com.example.demo.repository.RoutineRepository;
 import com.example.demo.repository.ScheduleRepository;
 import com.example.demo.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
+import org.slf4j.Logger; // Logger 임포트
+import org.slf4j.LoggerFactory; // LoggerFactory 임포트
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -21,16 +23,23 @@ import java.util.Optional;
 @Transactional
 public class ScheduleService {
 
+    private static final Logger logger = LoggerFactory.getLogger(ScheduleService.class); // Logger 선언
+
     private final ScheduleRepository scheduleRepository;
     private final RoutineRepository routineRepository;
     private final GoogleCalendarService googleCalendarService;
-    private final UserRepository userRepository; // UserRepository 주입
+    private final UserRepository userRepository;
 
-    // 루틴 기반 일정 생성
+    // 루틴 기반 일정 생성 (종료 시간을 직접 받음)
     public Schedule createFromRoutine(Long userId, Long routineId, String title, LocalDateTime startTime,
-                                      String location, String memo,String supplies, String category) {
+                                      LocalDateTime endTime, String location, String memo, String supplies, String category) {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new IllegalArgumentException("사용자를 찾을 수 없습니다. ID: " + userId));
+
+        // 루틴 ID가 null인 경우 예외 처리 (필수 항목)
+        if (routineId == null) {
+            throw new IllegalArgumentException("루틴을 선택해야 합니다.");
+        }
 
         Routine routine = routineRepository.findById(routineId)
                 .orElseThrow(() -> new IllegalArgumentException("해당 루틴이 존재하지 않습니다: " + routineId));
@@ -39,11 +48,10 @@ public class ScheduleService {
             throw new IllegalArgumentException("해당 루틴에 대한 권한이 없습니다.");
         }
 
-        int totalMinutes = routine.getItems().stream()
-                .mapToInt(RoutineItem::getDurationMinutes)
-                .sum();
-
-        LocalDateTime endTime = startTime.plusMinutes(totalMinutes);
+        // 종료 시간 유효성 검사
+        if (endTime == null || endTime.isBefore(startTime)) {
+            throw new IllegalArgumentException("종료 시간이 유효하지 않습니다. 종료 시간은 시작 시간보다 뒤여야 합니다.");
+        }
 
         Schedule schedule = Schedule.builder()
                 .title(title)
@@ -51,32 +59,31 @@ public class ScheduleService {
                 .endTime(endTime)
                 .location(location)
                 .memo(memo)
-                .category(Category.valueOf(category.toUpperCase())) // Enum 변환 시 대문자로
+                .category(Category.valueOf(category.toUpperCase()))
                 .routineId(routineId)
                 .supplies(supplies)
-                .user(user) // 조회한 User 객체 사용
+                .user(user)
                 .status(Schedule.ScheduleStatus.PENDING)
                 .build();
 
         try {
-            // GoogleCalendarService에 userId 전달
             String eventId = googleCalendarService.createEvent(schedule, userId);
             schedule.setGoogleCalendarEventId(eventId);
         } catch (Exception e) {
-            //schedule.setGoogleCalendarEventId(null); 구글 캘린더 연동 실패해도 일정은 저장
-            throw new RuntimeException("구글 캘린더 이벤트 생성 실패: " + e.getMessage(), e);
+            logger.error("Google Calendar 이벤트 생성 실패 (User ID: {}): {}. 일정은 DB에 저장됩니다.", userId, e.getMessage(), e);
+            schedule.setGoogleCalendarEventId(null);
         }
 
         return scheduleRepository.save(schedule);
     }
 
     // 날짜별 일정 조회
-    @Transactional(readOnly = true) // 조회 메서드이므로 readOnly true
+    @Transactional(readOnly = true)
     public List<Schedule> getSchedulesByDateRange(Long userId, LocalDateTime start, LocalDateTime end) {
         return scheduleRepository.findByUserIdAndStartTimeBetween(userId, start, end);
     }
 
-    // 일정 상태 업데이트 (이 메서드는 특정 사용자가 아닌 전체 스케줄 대상이므로 userId 파라미터 불필요)
+    // 일정 상태 업데이트
     public void updateScheduleStatus() {
         LocalDateTime now = LocalDateTime.now();
         List<Schedule> allSchedules = scheduleRepository.findAll();
@@ -104,12 +111,10 @@ public class ScheduleService {
 
         if (schedule.getGoogleCalendarEventId() != null && !schedule.getGoogleCalendarEventId().isEmpty()) {
             try {
-                // GoogleCalendarService에 userId 전달
                 googleCalendarService.deleteEvent(schedule.getGoogleCalendarEventId(), userId);
             } catch (Exception e) {
-                // 구글 캘린더 이벤트 삭제 실패 시 로깅 또는 예외 처리를 할 수 있으나, DB 삭제는 진행되도록 할 수 있음
-                // 여기서는 RuntimeException으로 처리
-                throw new RuntimeException("구글 캘린더 이벤트 삭제 실패: " + e.getMessage(), e);
+                logger.error("Google Calendar 이벤트 삭제 실패 (User ID: {}, Event ID: {}): {}. DB에서는 일정이 삭제됩니다.", userId, schedule.getGoogleCalendarEventId(), e.getMessage(), e);
+                // 구글 캘린더 이벤트 삭제 실패 시에도 DB에서는 일정을 삭제하도록 예외를 다시 던지지 않음
             }
         }
         scheduleRepository.delete(schedule);
