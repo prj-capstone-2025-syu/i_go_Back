@@ -7,20 +7,35 @@ import NavBarMain from "@/components/common/topNavMain"; // 기존 import 유지
 import Link from "next/link"; // 기존 import 유지
 import { useRouter } from "next/navigation"; // App Router의 useRouter 사용
 
+// 백엔드 URL 설정
+const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8080";
+
 export default function Home() {
   const [keyword, setKeyword] = useState("");
   const router = useRouter();
 
-  const handleSearchSubmit = (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault(); // 기본 폼 제출 동작 방지
-    if (keyword.trim()) {
-      // /chat 페이지로 이동하면서 keyword를 쿼리 파라미터로 전달
-      router.push(`/chat?keyword=${encodeURIComponent(keyword.trim())}`);
+  // 페이지 로드시 토큰 확인
+  useEffect(() => {
+    // 쿠키에서 토큰 확인
+    const hasToken = document.cookie.includes('access_token');
+
+    if (!hasToken) {
+      // 토큰이 없으면 구글 로그인 페이지로 리다이렉트
+      window.location.href = `${BACKEND_URL}/oauth2/authorization/google`;
     }
-  };
+  }, []);
+
   useEffect(() => {
     AOS.init();
   }, []);
+
+  const handleSearchSubmit = (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (keyword.trim()) {
+      router.push(`/chat?keyword=${encodeURIComponent(keyword.trim())}`);
+    }
+  };
+
   return (
     <div className="flex flex-col w-full h-full">
       <NavBarMain link="/mypage"></NavBarMain>
