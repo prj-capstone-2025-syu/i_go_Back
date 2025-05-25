@@ -143,9 +143,9 @@ export default function Calendar() {
                   plugins={[listPlugin]}
                   initialView="listWeek"
                   headerToolbar={{
-                    left: '',
+                    left: 'prev',
                     center: 'title',
-                    right: ''
+                    right: 'next'
                   }}
                   events={events}
                   eventClick={handleEventClick}
@@ -160,17 +160,17 @@ export default function Calendar() {
 
         {/* 선택된 이벤트 표시를 위한 CSS */}
         <style jsx global>{`
-        .selected-event {
-          border: 2px solid #01274F !important;
-          box-shadow: 0 0 5px rgba(1, 39, 79, 0.5) !important;
-          transform: scale(1.02);
-          transition: all 0.2s ease;
-        }
-        .fc-list-event.selected-event td {
-          background-color: rgba(1, 39, 79, 0.1) !important;
-          font-weight: bold;
-        }
-      `}</style>
+          .selected-event {
+            border: 2px solid #01274F !important;
+            box-shadow: 0 0 5px rgba(1, 39, 79, 0.5) !important;
+            transform: scale(1.02);
+            transition: all 0.2s ease;
+          }
+          .fc-list-event.selected-event td {
+            background-color: rgba(1, 39, 79, 0.1) !important;
+            font-weight: bold;
+          }
+        `}</style>
       </div>
   );
 }

@@ -1,13 +1,13 @@
 // src/api/routineApi.js
 import axios from 'axios';
 
-// axios 인스턴스 생성
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080';
 const api = axios.create({
-    baseURL: 'http://localhost:8080/api',
+    baseURL: `${API_URL}/api`,
     headers: {
         'Content-Type': 'application/json'
     },
-    withCredentials: true // 쿠키(인증) 포함
+    withCredentials: true
 });
 
 // 루틴 생성 함수
