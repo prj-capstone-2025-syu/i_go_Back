@@ -83,21 +83,70 @@ public class ScheduleService {
         return scheduleRepository.findByUserIdAndStartTimeBetween(userId, start, end);
     }
 
-    // 일정 상태 업데이트
-    public void updateScheduleStatus() {
-        LocalDateTime now = LocalDateTime.now();
-        List<Schedule> allSchedules = scheduleRepository.findAll();
+    // 일정 수정
+    public Schedule updateSchedule(Long userId, Long scheduleId, Long routineId, String title,
+                                   LocalDateTime startTime, LocalDateTime endTime, String location,
+                                   String memo, String supplies, String category) {
+        Schedule schedule = scheduleRepository.findById(scheduleId)
+                .orElseThrow(() -> new IllegalArgumentException("수정할 일정을 찾을 수 없습니다. ID: " + scheduleId));
 
-        for (Schedule schedule : allSchedules) {
-            if (now.isBefore(schedule.getStartTime())) {
-                schedule.setStatus(Schedule.ScheduleStatus.PENDING);
-            } else if (now.isAfter(schedule.getEndTime())) {
-                schedule.setStatus(Schedule.ScheduleStatus.COMPLETED);
-            } else {
-                schedule.setStatus(Schedule.ScheduleStatus.IN_PROGRESS);
+        if (!schedule.getUser().getId().equals(userId)) {
+            throw new IllegalArgumentException("해당 일정에 대한 수정 권한이 없습니다.");
+        }
+
+        // 루틴 ID가 제공된 경우 유효성 검사
+        if (routineId != null) {
+            Routine routine = routineRepository.findById(routineId)
+                    .orElseThrow(() -> new IllegalArgumentException("해당 루틴이 존재하지 않습니다: " + routineId));
+
+            if (!routine.getUser().getId().equals(userId)) {
+                throw new IllegalArgumentException("해당 루틴에 대한 권한이 없습니다.");
             }
         }
-        scheduleRepository.saveAll(allSchedules);
+
+        // 종료 시간 유효성 검사
+        if (endTime == null || endTime.isBefore(startTime)) {
+            throw new IllegalArgumentException("종료 시간이 유효하지 않습니다. 종료 시간은 시작 시간보다 뒤여야 합니다.");
+        }
+
+        // 일정 정보 업데이트
+        schedule.setTitle(title);
+        schedule.setStartTime(startTime);
+        schedule.setEndTime(endTime);
+        schedule.setLocation(location);
+        schedule.setMemo(memo);
+        schedule.setSupplies(supplies);
+        schedule.setCategory(Category.valueOf(category.toUpperCase()));
+        schedule.setRoutineId(routineId);
+
+        // Google Calendar 이벤트 업데이트
+        try {
+            if (schedule.getGoogleCalendarEventId() != null) {
+                googleCalendarService.updateEvent(schedule, userId);
+            } else {
+                // Google Calendar Event ID가 없는 경우 새로 생성
+                String eventId = googleCalendarService.createEvent(schedule, userId);
+                schedule.setGoogleCalendarEventId(eventId);
+            }
+        } catch (Exception e) {
+            logger.error("Google Calendar 이벤트 업데이트 실패 (User ID: {}, Schedule ID: {}): {}. 일정은 DB에 저장됩니다.",
+                    userId, scheduleId, e.getMessage(), e);
+        }
+
+        return scheduleRepository.save(schedule);
+    }
+
+    // 특정 일정 조회
+    @Transactional(readOnly = true)
+    public Schedule getScheduleById(Long userId, Long scheduleId) {
+        Schedule schedule = scheduleRepository.findById(scheduleId)
+                .orElseThrow(() -> new IllegalArgumentException("일정을 찾을 수 없습니다. ID: " + scheduleId));
+
+        if (!schedule.getUser().getId().equals(userId)) {
+            throw new IllegalArgumentException("해당 일정에 대한 조회 권한이 없습니다.");
+        }
+
+        return schedule;
     }
 
     // 일정 삭제

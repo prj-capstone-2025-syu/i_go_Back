@@ -1,6 +1,7 @@
 package com.example.demo.Controller;
 
-import com.example.demo.dto.CreateScheduleRequest;
+import com.example.demo.dto.Schedule.CreateScheduleRequest;
+import com.example.demo.dto.Schedule.UpdateScheduleRequest;
 import com.example.demo.entity.entityInterface.AppUser;
 import com.example.demo.entity.schedule.Schedule;
 import com.example.demo.service.ScheduleService;
@@ -54,5 +55,35 @@ public class ScheduleController {
             @PathVariable Long scheduleId) {
         scheduleService.deleteSchedule(appUser.getId(), scheduleId); // 인증된 사용자 ID 사용
         return ResponseEntity.ok(Map.of("message", "일정이 삭제되었습니다."));
+    }
+
+    // 특정 일정 조회
+    @GetMapping("/{scheduleId}")
+    public ResponseEntity<Schedule> getSchedule(
+            @AuthenticationPrincipal AppUser appUser,
+            @PathVariable Long scheduleId) {
+        Schedule schedule = scheduleService.getScheduleById(appUser.getId(), scheduleId);
+        return ResponseEntity.ok(schedule);
+    }
+
+    // 일정 수정
+    @PutMapping("/{scheduleId}")
+    public ResponseEntity<Schedule> updateSchedule(
+            @AuthenticationPrincipal AppUser appUser,
+            @PathVariable Long scheduleId,
+            @RequestBody UpdateScheduleRequest request) {
+        Schedule schedule = scheduleService.updateSchedule(
+                appUser.getId(),
+                scheduleId,
+                request.getRoutineId(),
+                request.getTitle(),
+                request.getStartTime(),
+                request.getEndTime(),
+                request.getLocation(),
+                request.getMemo(),
+                request.getSupplies(),
+                request.getCategory()
+        );
+        return ResponseEntity.ok(schedule);
     }
 }

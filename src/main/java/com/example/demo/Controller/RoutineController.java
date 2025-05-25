@@ -93,4 +93,9 @@ public class RoutineController {
             @RequestBody List<OrderChangeDTO> orderChanges) {
         return routineService.reorderItems(appUser.getId(), routineId, orderChanges);
     }
+
+    @GetMapping("/names")
+    public List<RoutineNameDTO> getRoutineNames(@AuthenticationPrincipal AppUser appUser) {
+        return routineService.getRoutineNamesWithIds(appUser.getId());
+    }
 }

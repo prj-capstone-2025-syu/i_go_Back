@@ -61,3 +61,9 @@ export const deleteRoutine = async (routineId) => {
     const response = await api.delete(`/routines/${routineId}`);
     return response.data;
 };
+
+// 루틴 이름만 조회
+export const getRoutineNames = async () => {
+    const response = await api.get('/routines/names');
+    return response.data;
+};

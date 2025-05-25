@@ -216,4 +216,13 @@ public class RoutineService {
         itemDTO.setOrderIndex(item.getOrderIndex());
         return itemDTO;
     }
+
+    @Transactional(readOnly = true)
+    public List<RoutineNameDTO> getRoutineNamesWithIds(Long userId) {
+        User user = getUserById(userId);
+        List<Routine> routines = routineRepository.findAllByUser(user);
+        return routines.stream()
+                .map(routine -> new RoutineNameDTO(routine.getId(), routine.getName()))
+                .collect(Collectors.toList());
+    }
 }

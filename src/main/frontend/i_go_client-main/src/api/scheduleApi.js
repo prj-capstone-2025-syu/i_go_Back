@@ -46,3 +46,25 @@ export const deleteSchedule = async (scheduleId) => {
         throw error;
     }
 };
+
+// 특정 일정 조회
+export const getScheduleById = async (scheduleId) => {
+    try {
+        const response = await api.get(`/api/schedules/${scheduleId}`);
+        return response.data;
+    } catch (error) {
+        console.error('일정 조회 실패:', error);
+        throw error;
+    }
+};
+
+// 일정 수정
+export const updateSchedule = async (scheduleId, scheduleData) => {
+    try {
+        const response = await api.put(`/api/schedules/${scheduleId}`, scheduleData);
+        return response.data;
+    } catch (error) {
+        console.error('일정 수정 실패:', error);
+        throw error;
+    }
+};
