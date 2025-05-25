@@ -76,7 +76,7 @@ public class SecurityConfig {
 
                             Cookie cookie = new Cookie("access_token", token);
                             cookie.setPath("/");
-                            cookie.setHttpOnly(true); // JavaScript에서 접근 불가
+                            cookie.setHttpOnly(false); // JavaScript에서 접근 불가
                             // cookie.setSecure(true); // HTTPS에서만 전송 (배포 시 권장)
                             cookie.setMaxAge(3600);
                             response.addCookie(cookie);

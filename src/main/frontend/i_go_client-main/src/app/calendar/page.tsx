@@ -7,26 +7,7 @@ import listPlugin from "@fullcalendar/list";
 import { getSchedules } from "@/api/scheduleApi";
 
 export default function Calendar() {
-  const [events, setEvents] = useState([
-    {
-      title: "아침 먹기",
-      start: "2025-05-17",
-      end: "2025-05-17",
-      color: "#fb8494",
-    },
-    {
-      title: "점심 먹기",
-      start: "2025-05-19",
-      end: "2025-05-20",
-      color: "#fb8494",
-    },
-    {
-      title: "저녁 먹기",
-      start: "2025-05-23",
-      end: "2025-05-30",
-      color: "#fb8494",
-    },
-  ]);
+  const [events, setEvents] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [selectedEvent, setSelectedEvent] = useState(null); // 선택된 이벤트를 저장할 상태
