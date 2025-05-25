@@ -26,12 +26,19 @@ export const createSchedule = async (scheduleData) => {
 // 일정 조회 (날짜 범위)
 export const getSchedules = async (start, end) => {
     try {
-        const response = await api.get('/api/schedules', {
-            params: { start, end }
+        // 날짜 형식이 ISO 8601 형태인지 확인
+        console.log("요청 시작 날짜:", start);
+        console.log("요청 종료 날짜:", end);
+
+        const params = new URLSearchParams({
+            start: start,
+            end: end
         });
+
+        const response = await api.get(`/api/schedules?${params.toString()}`);
         return response.data;
     } catch (error) {
-        console.error('일정 조회 실패:', error);
+        console.error('일정 조회 중 오류 발생:', error);
         throw error;
     }
 };

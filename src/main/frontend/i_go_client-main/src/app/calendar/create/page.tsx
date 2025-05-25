@@ -87,6 +87,12 @@ export default function CreateSchedule() {
     }));
   };
 
+  // 로컬 시간을 그대로 유지하는 ISO 문자열 생성 함수
+  const createLocalISOString = (dateStr: string, timeStr: string): string => {
+    // Date 객체를 사용하지 않고 직접 ISO 형식으로 변환
+    return `${dateStr}T${timeStr}:00`;
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
@@ -98,9 +104,9 @@ export default function CreateSchedule() {
         return;
       }
 
-      // 시작 시간과 종료 시간을 ISO 형식으로 변환
-      const startDateTime = new Date(`${formData.startDate}T${formData.startTime}`).toISOString();
-      const endDateTime = new Date(`${formData.endDate}T${formData.endTime}`).toISOString();
+      // 시간대 변환 없이 로컬 시간 그대로 사용
+      const startDateTime = createLocalISOString(formData.startDate, formData.startTime);
+      const endDateTime = createLocalISOString(formData.endDate, formData.endTime);
 
       // 종료시간이 시작시간보다 빠른지 검사
       if (new Date(endDateTime) <= new Date(startDateTime)) {
@@ -120,6 +126,8 @@ export default function CreateSchedule() {
       };
 
       console.log('전송할 일정 데이터:', scheduleData);
+      console.log('변환된 시작시간:', startDateTime);
+      console.log('변환된 종료시간:', endDateTime);
 
       await createSchedule(scheduleData);
       alert('일정이 성공적으로 등록되었습니다!');
@@ -252,7 +260,7 @@ export default function CreateSchedule() {
                             onChange={handleRoutineChange}
                             className="appearance-none bg-transparent w-full h-full outline-none border-[1px] border-[#DFDFDF] focus:border-[#383838] pl-[15px] pr-[42px] py-[8px] text-[13px] rounded-[4px]"
                         >
-                          <option value="">루틴을 선택하세요 (선택사항)</option>
+                          <option value="">루틴을 선택하세요.</option>
                           {routines && routines.length > 0 ? (
                               routines.map((routine: RoutineName) => {
                                 console.log('렌더링할 루틴:', routine); // 각 루틴 렌더링 시 로그
@@ -288,7 +296,7 @@ export default function CreateSchedule() {
 
                     {/* 준비물 */}
                     <div className="relative">
-                      <p className="text-[#383838] text-[13px] font-[500] tracking-[-0.4px] mb-[7px]">
+                      <p className="text-[#383838] text-[#383838] text-[13px] font-[500] tracking-[-0.4px] mb-[7px]">
                         준비물
                       </p>
                       <input

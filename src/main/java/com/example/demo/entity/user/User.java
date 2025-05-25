@@ -39,8 +39,17 @@ public class User implements AppUser {
 
     private LocalDateTime lastLoginAt;
 
+    // Google Calendar API를 위한 필드들 추가
+    @Column(length = 1000)
+    private String googleAccessToken;
+
+    @Column(length = 1000)
+    private String googleRefreshToken;
+
+    private LocalDateTime googleTokenExpiresAt;
+
     @Override
     public String getRole() {
-        return "ROLE_USER"; // 모든 사용자는 동일한 역할을 가짐
+        return "ROLE_USER";
     }
 }

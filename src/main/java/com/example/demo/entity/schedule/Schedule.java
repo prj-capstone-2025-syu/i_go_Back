@@ -1,7 +1,7 @@
 package com.example.demo.entity.schedule;
 
 import com.example.demo.entity.user.User;
-import com.example.demo.entity.routine.Routine;
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -42,6 +42,7 @@ public class Schedule {
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "user_id")
+    @JsonIgnoreProperties({"hibernateLazyInitializer", "handler"})
     private User user;
 
     @Enumerated(EnumType.STRING)

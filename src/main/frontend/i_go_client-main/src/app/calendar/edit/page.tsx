@@ -1,26 +1,13 @@
 "use client";
 import NavBar from "@/components/common/topNav";
 import React, { useState, useEffect } from "react";
-import { useSearchParams, useRouter } from "next/navigation";
 import { getScheduleById, updateSchedule, deleteSchedule } from "@/api/scheduleApi";
 import { getRoutineNames } from "@/api/routineApi";
+import { useSearchParams, useRouter } from 'next/navigation';
 
 interface RoutineName {
   id: number;
   name: string;
-}
-
-interface Schedule {
-  id: number;
-  title: string;
-  startTime: string;
-  endTime: string;
-  location: string;
-  memo: string;
-  supplies: string;
-  category: string;
-  routineId: number | null;
-  googleCalendarEventId: string | null;
 }
 
 export default function EditSchedule() {
@@ -30,7 +17,6 @@ export default function EditSchedule() {
 
   const [selectedRoutine, setSelectedRoutine] = useState<string>("");
   const [routines, setRoutines] = useState<RoutineName[]>([]);
-  const [schedule, setSchedule] = useState<Schedule | null>(null);
   const [formData, setFormData] = useState({
     title: "",
     startDate: "",
@@ -46,49 +32,75 @@ export default function EditSchedule() {
   const [loading, setLoading] = useState(false);
   const [initialLoading, setInitialLoading] = useState(true);
 
+  // 시간 정보 파싱 함수
+  const parseDateTime = (dateTimeStr: string) => {
+    if (!dateTimeStr) return { date: "", time: "" };
+
+    // ISO 형식 문자열에서 날짜와 시간 부분 추출
+    const date = dateTimeStr.split("T")[0];
+    const time = dateTimeStr.split("T")[1].substring(0, 5); // HH:mm 형식
+
+    return { date, time };
+  };
+
   // 루틴 목록과 일정 데이터 로드
   useEffect(() => {
     const loadData = async () => {
       try {
+        setInitialLoading(true);
+
         // 루틴 목록 로드
         const routineData = await getRoutineNames();
-        setRoutines(routineData);
+        if (Array.isArray(routineData)) {
+          const validRoutines = routineData.filter(
+              (routine: any): routine is RoutineName =>
+                  routine !== null &&
+                  routine !== undefined &&
+                  typeof routine.id === 'number' &&
+                  typeof routine.name === 'string' &&
+                  routine.name.trim() !== ''
+          );
+          setRoutines(validRoutines);
+        }
 
-        // 일정 데이터 로드
+        // 일정 ID가 있는 경우 일정 데이터 로드
         if (scheduleId) {
-          const scheduleData = await getScheduleById(parseInt(scheduleId));
-          setSchedule(scheduleData);
+          const scheduleData = await getScheduleById(scheduleId);
+          console.log('로드된 일정 데이터:', scheduleData);
 
-          // 일정 데이터로 폼 초기화
-          const startDateTime = new Date(scheduleData.startTime);
-          const endDateTime = new Date(scheduleData.endTime);
+          // 시작 시간과 종료 시간 파싱
+          const { date: startDate, time: startTime } = parseDateTime(scheduleData.startTime);
+          const { date: endDate, time: endTime } = parseDateTime(scheduleData.endTime);
 
+          // 폼 데이터 설정
           setFormData({
             title: scheduleData.title || "",
-            startDate: startDateTime.toISOString().split('T')[0],
-            startTime: startDateTime.toTimeString().slice(0, 5),
-            endDate: endDateTime.toISOString().split('T')[0],
-            endTime: endDateTime.toTimeString().slice(0, 5),
+            startDate,
+            startTime,
+            endDate,
+            endTime,
             location: scheduleData.location || "",
             supplies: scheduleData.supplies || "",
             memo: scheduleData.memo || "",
             category: scheduleData.category || "PERSONAL",
-            isOnline: false // 비대면 여부는 별도 필드가 없으므로 기본값
+            isOnline: scheduleData.location?.toLowerCase().includes('online') || false
           });
 
-          setSelectedRoutine(scheduleData.routineId ? scheduleData.routineId.toString() : "");
+          // 루틴 ID 설정
+          if (scheduleData.routineId) {
+            setSelectedRoutine(scheduleData.routineId.toString());
+          }
         }
       } catch (error) {
         console.error('데이터 로드 실패:', error);
-        alert('일정 정보를 불러오는데 실패했습니다.');
-        router.push('/calendar');
+        alert('데이터를 불러오는데 실패했습니다.');
       } finally {
         setInitialLoading(false);
       }
     };
 
     loadData();
-  }, [scheduleId, router]);
+  }, [scheduleId]);
 
   const handleRoutineChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     setSelectedRoutine(e.target.value);
@@ -102,14 +114,39 @@ export default function EditSchedule() {
     }));
   };
 
+  // 로컬 시간을 그대로 유지하는 ISO 문자열 생성 함수
+  const createLocalISOString = (dateStr: string, timeStr: string): string => {
+    // Date 객체를 사용하지 않고 직접 ISO 형식으로 변환
+    return `${dateStr}T${timeStr}:00`;
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!scheduleId) {
+      alert('일정 ID가 없습니다.');
+      return;
+    }
+
     setLoading(true);
 
     try {
-      // 시작 시간과 종료 시간을 ISO 형식으로 변환
-      const startDateTime = new Date(`${formData.startDate}T${formData.startTime}`).toISOString();
-      const endDateTime = new Date(`${formData.endDate}T${formData.endTime}`).toISOString();
+      // 시간 유효성 검사
+      if (!formData.startDate || !formData.startTime || !formData.endDate || !formData.endTime) {
+        alert('시작일시와 종료일시를 모두 입력해주세요.');
+        setLoading(false);
+        return;
+      }
+
+      // 시간대 변환 없이 로컬 시간 그대로 사용
+      const startDateTime = createLocalISOString(formData.startDate, formData.startTime);
+      const endDateTime = createLocalISOString(formData.endDate, formData.endTime);
+
+      // 종료시간이 시작시간보다 빠른지 검사
+      if (new Date(endDateTime) <= new Date(startDateTime)) {
+        alert('종료일시는 시작일시보다 늦어야 합니다.');
+        setLoading(false);
+        return;
+      }
 
       const scheduleData = {
         routineId: selectedRoutine ? parseInt(selectedRoutine) : null,
@@ -122,7 +159,9 @@ export default function EditSchedule() {
         category: formData.category
       };
 
-      await updateSchedule(parseInt(scheduleId!), scheduleData);
+      console.log('전송할 일정 데이터:', scheduleData);
+
+      await updateSchedule(scheduleId, scheduleData);
       alert('일정이 성공적으로 수정되었습니다!');
       router.push('/calendar');
 
@@ -135,18 +174,24 @@ export default function EditSchedule() {
   };
 
   const handleDelete = async () => {
-    if (!window.confirm('정말로 이 일정을 삭제하시겠습니까?')) {
+    if (!scheduleId) {
+      alert('일정 ID가 없습니다.');
+      return;
+    }
+
+    if (!confirm('정말로 이 일정을 삭제하시겠습니까?')) {
       return;
     }
 
     setLoading(true);
+
     try {
-      await deleteSchedule(parseInt(scheduleId!));
-      alert('일정이 성공적으로 삭제되었습니다!');
+      await deleteSchedule(scheduleId);
+      alert('일정이 삭제되었습니다.');
       router.push('/calendar');
     } catch (error) {
       console.error('일정 삭제 실패:', error);
-      alert('일정 삭제에 실패했습니다. 다시 시도해주세요.');
+      alert('일정 삭제에 실패했습니다.');
     } finally {
       setLoading(false);
     }
@@ -156,19 +201,8 @@ export default function EditSchedule() {
     return (
         <div className="flex flex-col w-full h-full">
           <NavBar title="일정 수정" link="/calendar"></NavBar>
-          <div className="flex items-center justify-center h-full">
-            <p>일정 정보를 불러오는 중...</p>
-          </div>
-        </div>
-    );
-  }
-
-  if (!schedule) {
-    return (
-        <div className="flex flex-col w-full h-full">
-          <NavBar title="일정 수정" link="/calendar"></NavBar>
-          <div className="flex items-center justify-center h-full">
-            <p>일정을 찾을 수 없습니다.</p>
+          <div className="flex justify-center items-center h-full">
+            <p>로딩 중...</p>
           </div>
         </div>
     );
@@ -269,6 +303,9 @@ export default function EditSchedule() {
                     <div className="relative">
                       <p className="text-[#383838] text-[13px] font-[500] tracking-[-0.4px] mb-[7px]">
                         루틴 선택
+                        <span className="text-[10px] text-gray-500 ml-1">
+                        ({routines.length}개)
+                      </span>
                       </p>
                       <div className="group relative flex w-full justify-between items-center overflow-hidden">
                         <select
@@ -276,12 +313,18 @@ export default function EditSchedule() {
                             onChange={handleRoutineChange}
                             className="appearance-none bg-transparent w-full h-full outline-none border-[1px] border-[#DFDFDF] focus:border-[#383838] pl-[15px] pr-[42px] py-[8px] text-[13px] rounded-[4px]"
                         >
-                          <option value="">루틴을 선택하세요 (선택사항)</option>
-                          {routines.map((routine) => (
-                              <option key={routine.id} value={routine.id}>
-                                {routine.name}
+                          <option value="">루틴을 선택하세요.</option>
+                          {routines && routines.length > 0 ? (
+                              routines.map((routine: RoutineName) => (
+                                  <option key={routine.id} value={routine.id.toString()}>
+                                    {routine.name}
+                                  </option>
+                              ))
+                          ) : (
+                              <option disabled>
+                                {routines.length === 0 ? "루틴이 없습니다" : "로딩 중..."}
                               </option>
-                          ))}
+                          )}
                         </select>
                         <div className="group-hover:rotate-180 duration-300 absolute right-[15px]">
                           <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" fill="none">
@@ -373,10 +416,10 @@ export default function EditSchedule() {
                           type="button"
                           onClick={handleDelete}
                           disabled={loading}
-                          className="flex justify-center bg-[#777777] hover:bg-[#777777]/90 disabled:bg-gray-400 min-w-[115px] py-[10px] px-[20px] rounded-[4px]"
+                          className="flex justify-center bg-[#DC2626] hover:bg-[#DC2626]/90 disabled:bg-gray-400 min-w-[115px] py-[10px] px-[20px] rounded-[4px]"
                       >
                       <span className="font-[500] text-[15px] leading-[19px] tracking-[-0.4px] text-[#fff]">
-                        일정삭제
+                        일정 삭제
                       </span>
                       </button>
                       <button
@@ -385,7 +428,7 @@ export default function EditSchedule() {
                           className="flex justify-center bg-[#01274F] hover:bg-[#01274F]/90 disabled:bg-gray-400 min-w-[115px] py-[10px] px-[20px] rounded-[4px]"
                       >
                       <span className="font-[500] text-[15px] leading-[19px] tracking-[-0.4px] text-[#fff]">
-                        {loading ? '수정 중...' : '일정 수정'}
+                        {loading ? '수정 중...' : '일정 수정하기'}
                       </span>
                       </button>
                     </div>

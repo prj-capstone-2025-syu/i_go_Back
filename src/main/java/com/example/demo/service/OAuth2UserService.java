@@ -36,41 +36,51 @@ public class OAuth2UserService extends DefaultOAuth2UserService {
         String name = (String) originalAttributes.get("name");
         String picture = (String) originalAttributes.get("picture");
 
+        // Google Access Token 정보 추출
+        String accessToken = userRequest.getAccessToken().getTokenValue();
+        LocalDateTime expiresAt = userRequest.getAccessToken().getExpiresAt() != null
+                ? LocalDateTime.ofInstant(userRequest.getAccessToken().getExpiresAt(), java.time.ZoneId.systemDefault())
+                : null;
+
         Optional<User> userOptional = userRepository.findByOauthId(oauthId);
         User user;
         boolean isNewUser = false;
 
         if (userOptional.isPresent()) {
             user = userOptional.get();
-            user.setNickname(name); // 이름이 변경되었을 수 있음.(닉네임 재설정)
+            user.setNickname(name);
             user.setProfileImageUrl(picture);
             user.setLastLoginAt(LocalDateTime.now());
+
+            // Google 토큰 정보 업데이트
+            user.setGoogleAccessToken(accessToken);
+            user.setGoogleTokenExpiresAt(expiresAt);
+
             userRepository.save(user);
         } else {
-            // 새 사용자 등록
-            isNewUser = true; // 신규 사용자 플래그 설정
+            isNewUser = true;
             user = User.builder()
                     .email(email)
-                    .nickname(generateUniqueNickname(name)) // 닉네임 중복 방지
+                    .nickname(generateUniqueNickname(name))
                     .oauthId(oauthId)
                     .profileImageUrl(picture)
                     .status(UserStatus.ACTIVE)
                     .registeredAt(LocalDateTime.now())
                     .lastLoginAt(LocalDateTime.now())
+                    // Google 토큰 정보 저장
+                    .googleAccessToken(accessToken)
+                    .googleTokenExpiresAt(expiresAt)
                     .build();
             userRepository.save(user);
         }
 
-        // attributes에 isNewUser 플래그 추가
         Map<String, Object> userAttributes = new HashMap<>(originalAttributes);
         userAttributes.put("isNewUser", isNewUser);
 
-        // userAttributes.put("userId", user.getId());
-
         return new DefaultOAuth2User(
                 Collections.singleton(new org.springframework.security.core.authority.SimpleGrantedAuthority(user.getRole())),
-                userAttributes, // 수정된 attributes 사용
-                "email" // Principal Name으로 사용할 속성 키
+                userAttributes,
+                "email"
         );
     }
 
