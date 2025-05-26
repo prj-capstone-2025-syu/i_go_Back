@@ -13,7 +13,7 @@ const api = axios.create({
 // 일정 생성
 export const createSchedule = async (scheduleData) => {
     try {
-        const response = await api.post('/api/schedules', scheduleData);
+        const response = await api.post('/schedules', scheduleData);
         return response.data;
     } catch (error) {
         console.error('일정 생성 실패:', error);
@@ -33,7 +33,7 @@ export const getSchedules = async (start, end) => {
             end: end
         });
 
-        const response = await api.get(`/api/schedules?${params.toString()}`);
+        const response = await api.get(`/schedules?${params.toString()}`);
         return response.data;
     } catch (error) {
         console.error('일정 조회 중 오류 발생:', error);
@@ -44,7 +44,7 @@ export const getSchedules = async (start, end) => {
 // 일정 삭제
 export const deleteSchedule = async (scheduleId) => {
     try {
-        const response = await api.delete(`/api/schedules/${scheduleId}`);
+        const response = await api.delete(`/schedules/${scheduleId}`);
         return response.data;
     } catch (error) {
         console.error('일정 삭제 실패:', error);
@@ -55,7 +55,7 @@ export const deleteSchedule = async (scheduleId) => {
 // 특정 일정 조회
 export const getScheduleById = async (scheduleId) => {
     try {
-        const response = await api.get(`/api/schedules/${scheduleId}`);
+        const response = await api.get(`/schedules/${scheduleId}`);
         return response.data;
     } catch (error) {
         console.error('일정 조회 실패:', error);
@@ -66,7 +66,7 @@ export const getScheduleById = async (scheduleId) => {
 // 일정 수정
 export const updateSchedule = async (scheduleId, scheduleData) => {
     try {
-        const response = await api.put(`/api/schedules/${scheduleId}`, scheduleData);
+        const response = await api.put(`/schedules/${scheduleId}`, scheduleData);
         return response.data;
     } catch (error) {
         console.error('일정 수정 실패:', error);
