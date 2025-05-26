@@ -1,13 +1,13 @@
 import axios from 'axios';
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || '';  // 비워둠!
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080';
 const api = axios.create({
-    baseURL: `/api`,  // 상대경로로!
+    baseURL: `${API_URL}/api`,
     headers: {
         'Content-Type': 'application/json'
     },
     withCredentials: true
-});
+}); // 절대경로 -> 무조건 바꿔야함.
 
 // 현재 사용자 정보 조회
 export const getCurrentUser = async () => {
