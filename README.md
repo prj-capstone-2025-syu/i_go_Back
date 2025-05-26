@@ -74,3 +74,41 @@ yarn dev
 ```
 
 > 브라우저에서 `http://localhost:3000`에 접속
+
+
+## MySQL Workbench로 RDS DB 접속 방법
+
+### 접속 정보
+
+- **호스트명**: [호스트명 입력]
+- **포트**: 3306
+- **사용자명**: root
+- **비밀번호**: rootroot
+- **데이터베이스**: user_schema
+
+## MySQL Workbench 접속 방법
+
+1. **MySQL Workbench 실행**
+   - MySQL Workbench를 실행합니다.
+
+2. **새 연결 생성**
+   - 홈 화면에서 "+" 버튼을 클릭하여 새 연결을 생성합니다.
+
+3. **연결 설정**
+   - **Connection Name**: IGO_RDS (원하는 이름)
+   - **Connection Method**: Standard (TCP/IP)
+   - **Hostname**: [호스트명 입력]
+   - **Port**: 3306
+   - **Username**: root
+
+4. **연결 테스트**
+   - "Test Connection" 버튼을 클릭합니다.
+   - 비밀번호 입력란에 `rootroot`를 입력한 후 연결이 성공하는지 확인합니다.
+
+5. **연결 저장**
+   - 연결이 성공하면 "OK"를 클릭하여 설정을 저장합니다.
+
+6. **데이터베이스 사용**
+   - 저장된 연결을 더블클릭하여 접속합니다.
+   - 접속 후 `user_schema` 데이터베이스를 사용합니다.
+---
