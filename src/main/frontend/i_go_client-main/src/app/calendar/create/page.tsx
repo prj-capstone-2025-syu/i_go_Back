@@ -3,6 +3,7 @@ import NavBar from "@/components/common/topNav";
 import React, { useState, useEffect } from "react";
 import { createSchedule } from "@/api/scheduleApi";
 import { getRoutineNames } from "@/api/routineApi";
+import {router} from "next/client";
 
 interface RoutineName {
   id: number;
@@ -131,6 +132,7 @@ export default function CreateSchedule() {
 
       await createSchedule(scheduleData);
       alert('일정이 성공적으로 등록되었습니다!');
+      router.push('/calendar');
 
       // 폼 초기화
       setFormData({

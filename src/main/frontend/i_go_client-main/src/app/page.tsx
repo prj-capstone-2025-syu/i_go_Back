@@ -1,11 +1,12 @@
 "use client"; // 상태(useState)와 라우터(useRouter)를 사용하므로 클라이언트 컴포넌트로 명시합니다.
-import { useEffect } from "react";
+import React, { useState, useEffect } from "react";
 import AOS from "aos";
 import "aos/dist/aos.css";
-import React, { useState } from "react";
-import NavBarMain from "@/components/common/topNavMain"; // 기존 import 유지
-import Link from "next/link"; // 기존 import 유지
-import { useRouter } from "next/navigation"; // App Router의 useRouter 사용
+import NavBarMain from "@/components/common/topNavMain";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { format } from "date-fns";
+import { getUpcomingSchedules } from "@/api/scheduleApi";
 
 // 백엔드 URL 설정
 const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8080";//TODO :하드코딩이라 무조건 바꿔야함!!!!!!!!!
@@ -14,13 +15,16 @@ export default function Home() {
   const [keyword, setKeyword] = useState("");
   const router = useRouter();
 
+  const [upcomingSchedules, setUpcomingSchedules] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
+
   // 페이지 로드시 토큰 확인
   useEffect(() => {
     // 쿠키에서 토큰 확인
     const hasToken = document.cookie.includes('access_token');
 
     if (!hasToken) {
-      // 토큰이 없으면 구글 로그인 페이지로 리다이렉트
+      // 토큰이 없으면 구글 로그인 페이지로 리다이렉트(임시)
       window.location.href = `${BACKEND_URL}/oauth2/authorization/google`;
     }
   }, []);
@@ -28,6 +32,33 @@ export default function Home() {
   useEffect(() => {
     AOS.init();
   }, []);
+
+  // 다가오는 일정 데이터 로드
+  useEffect(() => {
+    const fetchUpcomingSchedules = async () => {
+      try {
+        setIsLoading(true);
+        const data = await getUpcomingSchedules(3); // 최대 3개 요청
+        setUpcomingSchedules(data);
+      } catch (error) {
+        console.error("다가오는 일정 로드 실패:", error);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchUpcomingSchedules();
+  }, []);
+
+// 날짜 포맷팅 함수
+  const formatDateTime = (dateTimeString) => {
+    try {
+      const date = new Date(dateTimeString);
+      return format(date, "yyyy-MM-dd HH:mm");
+    } catch (error) {
+      return "날짜 정보 없음";
+    }
+  };
 
   const handleSearchSubmit = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -70,7 +101,7 @@ export default function Home() {
             </div>
           </form>
           {/* 진행중인 일정, 다가오는 일정, 날씨 등 나머지 UI 코드... */}
-          {/* ... (사용자님이 제공해주신 나머지 Home 페이지 코드가 여기에 위치합니다) ... */}
+          { /* 진행중인 일정 섹션 */}
           <div
             data-aos="fade-up"
             data-aos-easing="ease-in-out"
@@ -285,12 +316,12 @@ export default function Home() {
 
           {/* 다가오는 일정 */}
           <div
-            data-aos="fade-up"
-            data-aos-easing="ease-in-out"
-            data-aos-duration="400"
-            data-aos-once="true"
-            data-aos-delay="400"
-            className="flex justify-between items-end w-full mb-[8px] px-[5px]"
+              data-aos="fade-up"
+              data-aos-easing="ease-in-out"
+              data-aos-duration="400"
+              data-aos-once="true"
+              data-aos-delay="400"
+              className="flex justify-between items-end w-full mb-[8px] px-[5px]"
           >
             <p className="text-[#01274F] text-[19px] font-[700] tracking-[-0.4px]">
               다가오는 일정
@@ -300,73 +331,50 @@ export default function Home() {
                 더보기
               </p>
               <svg
-                width="22"
-                height="22"
-                viewBox="0 0 22 22"
-                fill="none"
-                xmlns="http://www.w3.org/2000/svg"
+                  width="22"
+                  height="22"
+                  viewBox="0 0 22 22"
+                  fill="none"
+                  xmlns="http://www.w3.org/2000/svg"
               >
                 <path
-                  d="M11 8.06675V11.0001M11 11.0001V13.9334M11 11.0001H13.9333M11 11.0001L8.06665 11.0001M3.66666 15.5834C3.66665 17.1022 4.89787 18.3334 6.41666 18.3334H15.5833C17.1021 18.3334 18.3333 17.1022 18.3333 15.5834V6.41675C18.3333 4.89797 17.1021 3.66675 15.5833 3.66675H6.41666C4.89788 3.66675 3.66666 4.89797 3.66666 6.41675L3.66666 15.5834Z"
-                  stroke="#01274F"
-                  strokeLinecap="round"
+                    d="M11 8.06675V11.0001M11 11.0001V13.9334M11 11.0001H13.9333M11 11.0001L8.06665 11.0001M3.66666 15.5834C3.66665 17.1022 4.89787 18.3334 6.41666 18.3334H15.5833C17.1021 18.3334 18.3333 17.1022 18.3333 15.5834V6.41675C18.3333 4.89797 17.1021 3.66675 15.5833 3.66675H6.41666C4.89788 3.66675 3.66666 4.89797 3.66666 6.41675L3.66666 15.5834Z"
+                    stroke="#01274F"
+                    strokeLinecap="round"
                 />
               </svg>
             </Link>
           </div>
           <div
-            data-aos="fade-up"
-            data-aos-easing="ease-in-out"
-            data-aos-duration="400"
-            data-aos-once="true"
-            data-aos-delay="400"
-            className="w-full bg-[#fff] p-[15px] rounded-[6px] shadow-[0px_0px_5px_rgba(0,0,0,0.2)] mb-[22px]"
+              data-aos="fade-up"
+              data-aos-easing="ease-in-out"
+              data-aos-duration="400"
+              data-aos-once="true"
+              data-aos-delay="400"
+              className="w-full bg-[#fff] p-[15px] rounded-[6px] shadow-[0px_0px_5px_rgba(0,0,0,0.2)] mb-[22px]"
           >
-            <Link
-              href="#"
-              className="flex items-start  flex-col  justify-between gap-x-[10px] gap-y-[4px] w-full bg-[#fff] border-b-[1px] border-[#dfdfdf] py-[7px] px-[10px] lg:px-[20px] hover:bg-[#dfdfdf] last:!border-[0px] first:!pt-[0px] last:!pb-[0px]"
-            >
-              <p className="w-full text-[#383838] text-[13px] line-clamp-1 pr-[15px]">
-                제목은 첫줄까지만 표시됩니다. 제목은 첫줄까지만
-                표시됩니다.제목은 첫줄까지만 표시됩니다.제목은 첫줄까지만
-                표시됩니다.제목은 첫줄까지만 표시됩니다.
-              </p>
-              <div className="flex flex-row gap-x-[3px] md:gap-x-[15px] xl:gap-x-[65px]">
-                <p className="w-full text-[#777] text-[13px] pr-[5px] min-w-[68px] text-left md:text-center whitespace-nowrap">
-                  YYYY-MM-DD TT:MM
-                </p>
-              </div>
-            </Link>
-            <Link
-              href="#"
-              className="flex items-start  flex-col  justify-between gap-x-[10px] gap-y-[4px] w-full bg-[#fff] border-b-[1px] border-[#dfdfdf] py-[7px] px-[10px] lg:px-[20px] hover:bg-[#dfdfdf] last:!border-[0px] first:!pt-[0px] last:!pb-[0px]"
-            >
-              <p className="w-full text-[#383838] text-[13px] line-clamp-1 pr-[15px]">
-                제목은 첫줄까지만 표시됩니다. 제목은 첫줄까지만
-                표시됩니다.제목은 첫줄까지만 표시됩니다.제목은 첫줄까지만
-                표시됩니다.제목은 첫줄까지만 표시됩니다.
-              </p>
-              <div className="flex flex-row gap-x-[3px] md:gap-x-[15px] xl:gap-x-[65px]">
-                <p className="w-full text-[#777] text-[13px] pr-[5px] min-w-[68px] text-left md:text-center whitespace-nowrap">
-                  YYYY-MM-DD TT:MM
-                </p>
-              </div>
-            </Link>
-            <Link
-              href="#"
-              className="flex items-start  flex-col  justify-between gap-x-[10px] gap-y-[4px] w-full bg-[#fff] border-b-[1px] border-[#dfdfdf] py-[7px] px-[10px] lg:px-[20px] hover:bg-[#dfdfdf] last:!border-[0px] first:!pt-[0px] last:!pb-[0px]"
-            >
-              <p className="w-full text-[#383838] text-[13px] line-clamp-1 pr-[15px]">
-                제목은 첫줄까지만 표시됩니다. 제목은 첫줄까지만
-                표시됩니다.제목은 첫줄까지만 표시됩니다.제목은 첫줄까지만
-                표시됩니다.제목은 첫줄까지만 표시됩니다.
-              </p>
-              <div className="flex flex-row gap-x-[3px] md:gap-x-[15px] xl:gap-x-[65px]">
-                <p className="w-full text-[#777] text-[13px] pr-[5px] min-w-[68px] text-left md:text-center whitespace-nowrap">
-                  YYYY-MM-DD TT:MM
-                </p>
-              </div>
-            </Link>
+            {isLoading ? (
+                <p className="text-center py-2">일정을 불러오는 중...</p>
+            ) : upcomingSchedules.length > 0 ? (
+                upcomingSchedules.map((schedule) => (
+                    <Link
+                        key={schedule.id}
+                        href={`/calendar/schedules/${schedule.id}`}
+                        className="flex items-start flex-col justify-between gap-x-[10px] gap-y-[4px] w-full bg-[#fff] border-b-[1px] border-[#dfdfdf] py-[7px] px-[10px] lg:px-[20px] hover:bg-[#dfdfdf] last:!border-[0px] first:!pt-[0px] last:!pb-[0px]"
+                    >
+                      <p className="w-full text-[#383838] text-[13px] line-clamp-1 pr-[15px]">
+                        {schedule.title}
+                      </p>
+                      <div className="flex flex-row gap-x-[3px] md:gap-x-[15px] xl:gap-x-[65px]">
+                        <p className="w-full text-[#777] text-[13px] pr-[5px] min-w-[68px] text-left md:text-center whitespace-nowrap">
+                          {formatDateTime(schedule.startTime)}
+                        </p>
+                      </div>
+                    </Link>
+                ))
+            ) : (
+                <p className="text-center py-2">다가오는 일정이 없습니다.</p>
+            )}
           </div>
 
           {/* 날씨 */}

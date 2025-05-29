@@ -73,3 +73,17 @@ export const updateSchedule = async (scheduleId, scheduleData) => {
         throw error;
     }
 };
+
+// 다가오는 일정 조회 (3개)
+export const getUpcomingSchedules = async (limit = 3) => {
+    try {
+        const params = new URLSearchParams({
+            limit: limit.toString()
+        });
+        const response = await api.get(`/schedules/upcoming?${params.toString()}`);
+        return response.data;
+    } catch (error) {
+        console.error('다가오는 일정 조회 중 오류 발생:', error);
+        throw error;
+    }
+};
