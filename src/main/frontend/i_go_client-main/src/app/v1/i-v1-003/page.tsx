@@ -1,21 +1,82 @@
+"use client";
+
 import NavBarMain from "@/components/common/topNavMain";
 import Link from "next/link";
+import { useState, useEffect, useRef } from "react";
+import { useSearchParams } from "next/navigation";
 
 export default function Home() {
+  const [inputValue, setInputValue] = useState("");
+  const [messages, setMessages] = useState<{role: 'user'|'ai', text: string}[]>([]);
+  const [loading, setLoading] = useState(false);
+  const searchParams = useSearchParams();
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  // 쿼리스트링 message 자동 입력 및 전송
+  useEffect(() => {
+    const msg = searchParams.get("message");
+    if (msg) {
+      setInputValue(msg);
+      handleSend(msg);
+    }
+    // eslint-disable-next-line
+  }, []);
+
+  const handleSend = async (msg?: string) => {
+    const message = typeof msg === "string" ? msg : inputValue;
+    if (!message.trim()) return;
+    setMessages((prev) => [...prev, { role: "user", text: message }]);
+    setInputValue("");
+    setLoading(true);
+    try {
+      // 실제 API 엔드포인트에 맞게 수정 필요
+      const res = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message }),
+      });
+      const data = await res.json();
+      setMessages((prev) => [...prev, { role: "ai", text: data.message }]);
+    } catch (e) {
+      setMessages((prev) => [...prev, { role: "ai", text: "오류가 발생했습니다." }]);
+    }
+    setLoading(false);
+  };
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    handleSend();
+  };
+
   return (
     <div className="flex flex-col w-full h-full">
       <NavBarMain link="/mypage"></NavBarMain>
       <div className="w-full max-h-full overflow-y-auto">
         <div className="flex flex-col items-center justify-start p-[20px] w-full h-auto">
+          {/* 채팅 메시지 영역 */}
+          <div className="w-full 2xl:max-w-[781px] mb-[22px] flex flex-col gap-2">
+            {messages.map((msg, idx) => (
+              <div key={idx} className={msg.role === 'user' ? 'text-right' : 'text-left'}>
+                <span className={msg.role === 'user' ? 'bg-blue-100 text-blue-900 rounded px-2 py-1 inline-block' : 'bg-gray-100 text-gray-900 rounded px-2 py-1 inline-block'}>
+                  {msg.text}
+                </span>
+              </div>
+            ))}
+            {loading && <div className="text-left text-gray-400">AI가 답변 중...</div>}
+          </div>
           {/* 프롬프트 입력창 */}
-          <div className="relative w-full 2xl:max-w-[781px] mb-[22px]">
+          <form onSubmit={handleSubmit} className="relative w-full 2xl:max-w-[781px] mb-[22px]">
             <input
+              ref={inputRef}
               type="text"
+              value={inputValue}
+              onChange={(e) => setInputValue(e.target.value)}
               className="bg-[#fff] outline-none border-[1px] border-[#DFDFDF] shadow-[0px_0px_5px_rgba(0,0,0,0.2)] rounded-[6px] pr-[38px] pl-[15px] py-[12px] w-full font-[400] text-[15px] leading-[20px] text-[#383838] placeholder:!text-[#949494] focus:border-[#01274F]"
               placeholder="아이고 AI - 무엇을 도와드릴까요?"
+              disabled={loading}
             />
             <div className="absolute flex right-[11px] !top-[50%] !translate-y-[-50%]">
-              <button className="p-[4px]" type="submit">
+              <button className="p-[4px]" type="submit" disabled={loading}>
                 <svg
                   xmlns="http://www.w3.org/2000/svg"
                   width="16"
@@ -29,7 +90,7 @@ export default function Home() {
                 </svg>
               </button>
             </div>
-          </div>
+          </form>
           {/* 진행중인 일정 */}
           <div className="flex justify-between items-end w-full mb-[8px] px-[5px]">
             <p className="text-[#01274F] text-[19px] font-[700] tracking-[-0.4px]">

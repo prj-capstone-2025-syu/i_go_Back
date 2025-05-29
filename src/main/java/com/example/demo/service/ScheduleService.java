@@ -168,4 +168,48 @@ public class ScheduleService {
         }
         scheduleRepository.delete(schedule);
     }
+
+    public Schedule createSchedule(Long userId, String title, LocalDateTime startTime,
+                                  LocalDateTime endTime, String location, String memo, String category) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new IllegalArgumentException("사용자를 찾을 수 없습니다. ID: " + userId));
+
+        // 종료 시간 유효성 검사
+        if (endTime == null || endTime.isBefore(startTime)) {
+            throw new IllegalArgumentException("종료 시간이 유효하지 않습니다. 종료 시간은 시작 시간보다 뒤여야 합니다.");
+        }
+
+        Schedule schedule = Schedule.builder()
+                .title(title)
+                .startTime(startTime)
+                .endTime(endTime)
+                .location(location)
+                .memo(memo)
+                .category(Category.valueOf(category.toUpperCase()))
+                .user(user)
+                .status(Schedule.ScheduleStatus.PENDING)
+                .build();
+
+        try {
+            String eventId = googleCalendarService.createEvent(schedule, userId);
+            schedule.setGoogleCalendarEventId(eventId);
+        } catch (Exception e) {
+            logger.error("Google Calendar 이벤트 생성 실패 (User ID: {}): {}. 일정은 DB에 저장됩니다.", userId, e.getMessage(), e);
+            schedule.setGoogleCalendarEventId(null);
+        }
+
+        return scheduleRepository.save(schedule);
+    }
+
+    public List<Schedule> findSchedulesByTitleAndTime(Long userId, String title, LocalDateTime dateTime) {
+        return scheduleRepository.findByUserIdAndTitleAndStartTime(userId, title, dateTime);
+    }
+
+    public List<Schedule> findSchedulesByTitle(Long userId, String title) {
+        return scheduleRepository.findByUserIdAndTitle(userId, title);
+    }
+
+    public List<Schedule> findSchedulesByTime(Long userId, LocalDateTime dateTime) {
+        return scheduleRepository.findByUserIdAndStartTime(userId, dateTime);
+    }
 }

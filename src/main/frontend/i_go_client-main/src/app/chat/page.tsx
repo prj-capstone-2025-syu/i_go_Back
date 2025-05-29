@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useRef, Suspense } from "react";
 import { useSearchParams } from "next/navigation"; // App Router에서 URL 파라미터를 읽기 위함
 import NavBarMain from "@/components/common/topNavMain"; // 필요하다면 NavBarMain을 여기에 추가
+import { sendChatMessage } from "@/api/chatApi"; // 실제 경로에 맞게 수정
 
 // --- 아이콘 컴포넌트 정의 ---
 interface IconProps extends React.SVGProps<SVGSVGElement> {}
@@ -209,6 +210,8 @@ interface Message {
   time: string;
   sender: User;
   isSenderMe: boolean;
+  role: 'user' | 'ai';
+  data?: any[]; // 일정 등 부가 데이터
 }
 
 interface ChatHeaderProps {
@@ -437,6 +440,26 @@ const MessageItem: React.FC<MessageItemProps> = ({ message }) => {
           >
             {message.text}
           </p>
+          {/* AI 메시지이면서 일정 데이터가 있을 때 표로 출력 */}
+          {message.role === 'ai' && Array.isArray(message.data) && message.data.length > 0 && (
+            <ul className="mt-2 text-xs text-gray-700">
+              {message.data.map((schedule, idx) => (
+                <li key={idx} className="mb-1">
+                  <span className="font-semibold">{schedule.title}</span>
+                  {schedule.startTime && (
+                    <span> ({schedule.startTime} ~ {schedule.endTime})</span>
+                  )}
+                  {schedule.location && (
+                    <span> @ {schedule.location}</span>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
+          {/* 일정이 없을 때 안내 */}
+          {message.role === 'ai' && Array.isArray(message.data) && message.data.length === 0 && (
+            <div className="mt-2 text-xs text-gray-500">해당 날짜에 일정이 없습니다.</div>
+          )}
         </div>
         <p
           className={`outline-none text-xs text-gray-400 font-light leading-4 tracking-tight mt-1 ${
@@ -579,6 +602,7 @@ const ChatInterface = ({
 }) => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const messageAreaRef = useRef<HTMLDivElement>(null);
+  const [inputValue, setInputValue] = useState("");
 
   const currentUser: User = {
     name: "나",
@@ -586,15 +610,22 @@ const ChatInterface = ({
   };
   const aiPartner: User = {
     name: "아이고 AI",
-    avatarUrl: "/icon/aigo-ai-logo.svg" /* AI 로고 경로 */,
+    avatarUrl: "/icon/aigo-ai-logo.svg",
     lastSeen: "언제나 당신 곁에",
   };
 
   const [messages, setMessages] = useState<Message[]>([]);
+  const [loading, setLoading] = useState(false);
 
-  const addMessage = (text: string, sender: User, isSenderMe: boolean) => {
+  const addMessage = (
+    text: string,
+    sender: User,
+    isSenderMe: boolean,
+    role: 'user' | 'ai',
+    data?: any[]
+  ) => {
     const newMessage: Message = {
-      id: String(Date.now()) + Math.random(), // 고유 ID 강화
+      id: String(Date.now()) + Math.random(),
       text: text,
       time: new Date().toLocaleTimeString([], {
         hour: "2-digit",
@@ -603,47 +634,46 @@ const ChatInterface = ({
       }),
       sender: sender,
       isSenderMe: isSenderMe,
+      role: role,
+      data: data,
     };
     setMessages((prevMessages) => [...prevMessages, newMessage]);
   };
 
-  const handleSendMessage = (messageText: string) => {
-    addMessage(messageText, currentUser, true);
-
-    // TODO: 여기에 실제 AI 백엔드 또는 Socket.IO 서버로 메시지를 전송하는 로직을 추가합니다.
-    // 예: fetch('/api/ai-chat', { method: 'POST', body: JSON.stringify({ message: messageText }) })
-    //      .then(res => res.json())
-    //      .then(data => addMessage(data.reply, aiPartner, false));
-    console.log("사용자 메시지 전송:", messageText);
-
-    // AI 응답 시뮬레이션 (실제 백엔드 연동 필요)
-    setTimeout(() => {
-      addMessage(
-        `"${messageText}"라고 말씀하셨네요. (AI 응답 예시)`,
-        aiPartner,
-        false
-      );
-    }, 1000 + Math.random() * 1000);
+  const handleSend = async (msg?: string) => {
+    const message = typeof msg === "string" ? msg : inputValue;
+    if (!message.trim()) return;
+    addMessage(message, currentUser, true, 'user');
+    setInputValue("");
+    setLoading(true);
+    try {
+      const data = await sendChatMessage(message);
+      // data.message: 텍스트, data.data: 일정 리스트(있으면)
+      addMessage(data.message, aiPartner, false, 'ai', data.data);
+    } catch (e) {
+      addMessage("오류가 발생했습니다.", aiPartner, false, 'ai');
+    }
+    setLoading(false);
   };
 
   useEffect(() => {
-    // 페이지 로드 시 initialKeyword가 있으면 첫 메시지로 자동 전송
     if (initialKeyword) {
-      // 초기 키워드가 없으면 AI의 환영 메시지를 먼저 표시
       addMessage(
         "안녕하세요! 아이고 AI입니다. 무엇을 도와드릴까요?",
         aiPartner,
-        false
+        false,
+        'ai'
       );
-      handleSendMessage(initialKeyword);
+      handleSend(initialKeyword);
     } else {
-      // 초기 키워드가 없으면 AI의 환영 메시지를 먼저 표시
       addMessage(
         "안녕하세요! 아이고 AI입니다. 무엇을 도와드릴까요?",
         aiPartner,
-        false
+        false,
+        'ai'
       );
     }
+    // eslint-disable-next-line
   }, [initialKeyword]);
 
   useEffect(() => {
@@ -681,9 +711,12 @@ const ChatInterface = ({
           {messages.map((msg) => (
             <MessageItem key={msg.id} message={msg} />
           ))}
+          {loading && (
+            <div className="text-left text-gray-400 px-2 py-1">AI가 답변 중...</div>
+          )}
         </div>
       </div>
-      <MessageInput onSendMessage={handleSendMessage} />
+      <MessageInput onSendMessage={handleSend} />
     </div>
   );
 };
