@@ -86,4 +86,13 @@ public class ScheduleController {
         );
         return ResponseEntity.ok(schedule);
     }
+
+    //촤근 3개 불러오기
+    @GetMapping("/upcoming")
+    public ResponseEntity<List<Schedule>> getUpcomingSchedules(
+            @AuthenticationPrincipal AppUser appUser,
+            @RequestParam(defaultValue = "3") int limit) {
+        List<Schedule> schedules = scheduleService.getUpcomingSchedules(appUser.getId(), limit);
+        return ResponseEntity.ok(schedules);
+    }
 }

@@ -13,6 +13,7 @@ import org.slf4j.Logger; // Logger 임포트
 import org.slf4j.LoggerFactory; // LoggerFactory 임포트
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.data.domain.PageRequest;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -167,6 +168,14 @@ public class ScheduleService {
             }
         }
         scheduleRepository.delete(schedule);
+    }
+
+
+    //다가오는 일정 조회 (최대 3개)
+    @Transactional(readOnly = true)
+    public List<Schedule> getUpcomingSchedules(Long userId, int limit) {
+        LocalDateTime now = LocalDateTime.now();
+        return scheduleRepository.findByUserIdAndStartTimeAfterOrderByStartTimeAsc(userId, now, PageRequest.of(0, limit));
     }
 
     public Schedule createSchedule(Long userId, String title, LocalDateTime startTime,
