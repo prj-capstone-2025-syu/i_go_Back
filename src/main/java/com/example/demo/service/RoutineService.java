@@ -11,6 +11,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDateTime;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -224,5 +225,34 @@ public class RoutineService {
         return routines.stream()
                 .map(routine -> new RoutineNameDTO(routine.getId(), routine.getName()))
                 .collect(Collectors.toList());
+    }
+
+    // 특정 루틴에 속한 아이템들의 실제 실행 시간을 계산
+    @Transactional(readOnly = true)
+    public List<CalculatedRoutineItemTime> calculateRoutineItemTimes(Long routineId, LocalDateTime scheduleStartTime) {
+        Routine routine = routineRepository.findById(routineId)
+                .orElseThrow(() -> new IllegalArgumentException("루틴을 찾을 수 없습니다. ID: " + routineId));
+
+        List<CalculatedRoutineItemTime> calculatedTimes = new ArrayList<>();
+        LocalDateTime currentItemStartTime = scheduleStartTime;
+
+        // RoutineItem을 orderIndex 순으로 정렬
+        List<RoutineItem> sortedItems = routine.getItems().stream()
+                .sorted(Comparator.comparingInt(RoutineItem::getOrderIndex))
+                .collect(Collectors.toList());
+
+        for (RoutineItem item : sortedItems) {
+            LocalDateTime itemEndTime = currentItemStartTime.plusMinutes(item.getDurationMinutes());
+            calculatedTimes.add(new CalculatedRoutineItemTime(
+                    item.getId(),
+                    item.getName(),
+                    currentItemStartTime,
+                    itemEndTime,
+                    item.getDurationMinutes(),
+                    routine.getId()
+            ));
+            currentItemStartTime = itemEndTime; // 다음 아이템의 시작 시간은 현재 아이템의 종료 시간
+        }
+        return calculatedTimes;
     }
 }

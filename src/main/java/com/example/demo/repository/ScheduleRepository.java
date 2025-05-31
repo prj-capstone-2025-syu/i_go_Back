@@ -2,6 +2,8 @@ package com.example.demo.repository;
 
 import com.example.demo.entity.schedule.Schedule;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 import java.time.LocalDateTime;
@@ -15,4 +17,13 @@ public interface ScheduleRepository extends JpaRepository<Schedule, Long> {
     List<Schedule> findByUserIdAndTitleAndStartTime(Long userId, String title, LocalDateTime startTime);
     List<Schedule> findByUserIdAndStartTime(Long userId, LocalDateTime startTime);
     List<Schedule> findByUserIdAndTitle(Long userId, String title);
+    @Query("SELECT s FROM Schedule s WHERE s.startTime >= :startTimeStart AND s.startTime < :startTimeEnd AND s.status = :status AND s.user.fcmToken IS NOT NULL AND s.user.fcmToken <> ''")
+    List<Schedule> findByStartTimeBetweenAndStatusAndUserFcmTokenIsNotNull(
+            @Param("startTimeStart") LocalDateTime startTimeStart,
+            @Param("startTimeEnd") LocalDateTime startTimeEnd,
+            @Param("status") Schedule.ScheduleStatus status
+    );
+    // IN_PROGRESS 상태이고 FCM 토큰이 있는 사용자의 스케줄 조회
+    @Query("SELECT s FROM Schedule s WHERE s.status = :status AND s.user.fcmToken IS NOT NULL AND s.user.fcmToken <> ''")
+    List<Schedule> findByStatusAndUserFcmTokenIsNotNull(@Param("status") Schedule.ScheduleStatus status);
 }

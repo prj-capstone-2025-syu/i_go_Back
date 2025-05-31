@@ -48,6 +48,9 @@ public class User implements AppUser {
 
     private LocalDateTime googleTokenExpiresAt;
 
+    @Column
+    private String fcmToken;
+
     @Override
     public String getRole() {
         return "ROLE_USER";
