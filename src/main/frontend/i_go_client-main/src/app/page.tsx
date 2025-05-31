@@ -8,8 +8,6 @@ import { useRouter } from "next/navigation";
 import { format } from "date-fns";
 import { getUpcomingSchedules } from "@/api/scheduleApi";
 
-// 백엔드 URL 설정
-const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8080";//TODO :하드코딩이라 무조건 바꿔야함!!!!!!!!!
 
 export default function Home() {
   const [keyword, setKeyword] = useState("");

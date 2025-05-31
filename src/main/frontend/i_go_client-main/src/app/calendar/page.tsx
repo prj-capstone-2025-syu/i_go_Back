@@ -4,13 +4,14 @@ import NavBar from "@/components/common/topNav";
 import FullCalendar from "@fullcalendar/react";
 import dayGridPlugin from "@fullcalendar/daygrid";
 import listPlugin from "@fullcalendar/list";
+import koLocale from "@fullcalendar/core/locales/ko";
 import { getSchedules } from "@/api/scheduleApi";
 
 export default function Calendar() {
   const [events, setEvents] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
-  const [selectedEvent, setSelectedEvent] = useState(null); // 선택된 이벤트를 저장할 상태
+  const [selectedEvent, setSelectedEvent] = useState(null);
 
   // 일정 데이터 가져오기
   const fetchSchedules = async () => {
@@ -96,7 +97,41 @@ export default function Calendar() {
 
   return (
       <div className="flex flex-col w-full h-full">
+        {/* 툴바 스타일 개선 추가 */}
+        <style jsx global>{`
+          .fc-toolbar-title {
+            font-size: 18px !important;
+            font-weight: 500;
+          }
+          .fc .fc-toolbar.fc-header-toolbar {
+            margin-bottom: 15px !important;
+          }
+          .selected-event {
+            border: 2px solid #01274F !important;
+            box-shadow: 0 0 5px rgba(1, 39, 79, 0.5) !important;
+            transform: scale(1.02);
+            transition: all 0.2s ease;
+          }
+          .fc-list-event.selected-event td {
+            background-color: rgba(1, 39, 79, 0.1) !important;
+            font-weight: bold;
+          }
+          /* 오늘 버튼 스타일 */
+          .fc-today-button {
+            background-color: #6b7280 !important;
+            border-color: #6b7280 !important;
+            padding: 0.375rem 0.75rem !important;
+            font-size: 0.875rem !important;
+          }
+          /* 화살표 버튼 스타일 */
+          .fc-prev-button, .fc-next-button {
+            background-color: #1e293b !important;
+            border-color: #1e293b !important;
+          }
+        `}</style>
+
         <NavBar title="캘린더" link="#" />
+
         <div className="z-[999] absolute bottom-[0px] left-[0px] grid grid-cols-2 w-full bg-[#fff] p-[12px] gap-[12px]">
           <button
               className={`hover:opacity-[0.7] cursor-pointer py-[10px] px-[5px] bg-[#fff] border-[1px] 
@@ -117,16 +152,19 @@ export default function Calendar() {
             일정 등록
           </button>
         </div>
+
         <div className="w-full max-h-full overflow-y-auto">
           <div className="w-full max-h-full overflow-y-auto">
-            <div className="p-[20px] h-full">
+            {/* 레이아웃 구조 개선: gap-y-[20px] 추가, padding 조정 */}
+            <div className="flex flex-col gap-y-[20px] p-[15px] h-full">
               <FullCalendar
+                  locale={koLocale} // 한국어 로케일 추가
                   plugins={[dayGridPlugin]}
                   initialView="dayGridMonth"
                   headerToolbar={{
                     left: 'prev',
                     center: 'title',
-                    right: 'next'
+                    right: 'today next'
                   }}
                   events={events}
                   eventClick={handleEventClick}
@@ -137,15 +175,14 @@ export default function Calendar() {
                   }}
               />
 
-              <div className="pt-[15px]"></div>
-
               <FullCalendar
+                  locale={koLocale} // 한국어 로케일 추가
                   plugins={[listPlugin]}
                   initialView="listWeek"
                   headerToolbar={{
                     left: 'prev',
                     center: 'title',
-                    right: 'next'
+                    right: 'today next'
                   }}
                   events={events}
                   eventClick={handleEventClick}
@@ -157,20 +194,6 @@ export default function Calendar() {
             </div>
           </div>
         </div>
-
-        {/* 선택된 이벤트 표시를 위한 CSS */}
-        <style jsx global>{`
-          .selected-event {
-            border: 2px solid #01274F !important;
-            box-shadow: 0 0 5px rgba(1, 39, 79, 0.5) !important;
-            transform: scale(1.02);
-            transition: all 0.2s ease;
-          }
-          .fc-list-event.selected-event td {
-            background-color: rgba(1, 39, 79, 0.1) !important;
-            font-weight: bold;
-          }
-        `}</style>
       </div>
   );
 }

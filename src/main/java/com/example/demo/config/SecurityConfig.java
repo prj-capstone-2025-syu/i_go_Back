@@ -12,7 +12,7 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
-import org.springframework.security.config.http.SessionCreationPolicy;
+import org.springframework.security.config.http.SessionCreationPolicy; // 확인
 import org.springframework.security.crypto.factory.PasswordEncoderFactories;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.oauth2.client.authentication.OAuth2AuthenticationToken;
@@ -62,7 +62,7 @@ public class SecurityConfig {
                 .httpBasic(httpBasic -> httpBasic.disable())
                 .formLogin(formLogin -> formLogin.disable())
                 .sessionManagement(session -> session
-                        .sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+                        .sessionCreationPolicy(SessionCreationPolicy.IF_REQUIRED)) // STATELESS에서 IF_REQUIRED로 변경
                 .authorizeHttpRequests(authorize -> authorize
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                         .requestMatchers("/", "/login/**", "/oauth2/**", "/user/profile/edit", "/calendar-test", "/error").permitAll()
@@ -80,17 +80,12 @@ public class SecurityConfig {
 
                             Cookie cookie = new Cookie("access_token", token);
                             cookie.setPath("/");
-                            cookie.setHttpOnly(false);
-                            cookie.setMaxAge(3600);
+                            cookie.setHttpOnly(false); // 개발 환경에서는 false, 프로덕션에서는 true 권장
+                            cookie.setMaxAge(3600); // 1시간
+                            // cookie.setSecure(true); // HTTPS 환경에서만 사용
                             response.addCookie(cookie);
 
-                            Boolean isNewUser = oAuth2User.getAttribute("isNewUser");
-
-                            if (Boolean.TRUE.equals(isNewUser)) {
-                                response.sendRedirect(frontendUrl + "/user/profile/edit");
-                            } else {
-                                response.sendRedirect(frontendUrl);
-                            }
+                            response.sendRedirect(frontendUrl);
                         })
                 )
                 .addFilterBefore(
