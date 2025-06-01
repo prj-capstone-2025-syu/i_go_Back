@@ -29,9 +29,13 @@ interface RoutineInfo { // getRoutineById 응답을 위한 간략한 타입
   totalDurationMinutes?: number; // 필요에 따라 사용
 }
 
-export default function Home() {
-  console.log("🏠 [Home Component] 컴포넌트 렌더링 시작");
+interface RoutineItem {
+  id: number;
+  name: string;
+  durationMinutes: number;
+}
 
+export default function Home() {
   const [keyword, setKeyword] = useState("");
   const router = useRouter();
 
@@ -43,87 +47,53 @@ export default function Home() {
   const [inProgressSchedule, setInProgressSchedule] = useState<ScheduleType | null>(null);
   const [scheduleStatusInfo, setScheduleStatusInfo] = useState<{ text: string; color: string; fontWeight?: string } | null>(null);
   const [routineName, setRoutineName] = useState<string | null>(null);
-
-  // 🔍 DEBUG: 상태 변화 모니터링
-  useEffect(() => {
-    console.log("🔄 [State Debug] upcomingSchedules 상태 변경:", upcomingSchedules);
-  }, [upcomingSchedules]);
-
-  useEffect(() => {
-    console.log("🔄 [State Debug] nearestSchedule 상태 변경:", nearestSchedule);
-  }, [nearestSchedule]);
-
-  useEffect(() => {
-    console.log("🔄 [State Debug] isAuthenticated 상태 변경:", isAuthenticated);
-  }, [isAuthenticated]);
-
-  useEffect(() => {
-    console.log("🔄 [State Debug] scheduleStatusInfo 상태 변경:", scheduleStatusInfo);
-  }, [scheduleStatusInfo]);
+  const [currentRoutineDetails, setCurrentRoutineDetails] = useState<RoutineInfo | null>(null);
+  const scheduleToUse = inProgressSchedule || nearestSchedule;
+  const [currentTime, setCurrentTime] = useState(new Date());
 
   // 페이지 로드시 토큰 확인
   useEffect(() => {
-    console.log("🔑 [Auth Debug] 토큰 확인 시작");
     // 쿠키에서 토큰 확인
     const hasToken = document.cookie.includes('access_token');
-    console.log("🔑 [Auth Debug] 쿠키에서 토큰 발견:", hasToken);
-    console.log("🔑 [Auth Debug] 전체 쿠키:", document.cookie);
 
     setIsAuthenticated(hasToken);
 
     if (!hasToken) {
-      console.log("❌ [Auth Debug] 토큰이 없음 - /greeting 페이지로 리다이렉트");
       // 토큰이 없으면 /greeting 페이지로 리다이렉트
       if (window.location.pathname !== "/greeting") {
-        console.log("💾 [Auth Debug] 현재 경로 저장:", window.location.pathname + window.location.search);
         localStorage.setItem("redirectPath", window.location.pathname + window.location.search);
       }
       router.push('/greeting');
-    } else {
-      console.log("✅ [Auth Debug] 토큰 확인됨 - 정상 진행");
     }
   }, [router]);
 
   useEffect(() => {
-    console.log("🎬 [AOS Debug] AOS 초기화");
     AOS.init();
   }, []);
 
   // 다가오는 일정 데이터 로드 - 인증 확인 후에만 실행
   useEffect(() => {
-    console.log("📅 [Schedule Debug] 일정 로드 useEffect 실행, isAuthenticated:", isAuthenticated);
-
     if (isAuthenticated) {
       const fetchSchedules = async () => {
-        console.log("📅 [Schedule Debug] 일정 데이터 로드 시작");
         setIsLoading(true);
         try {
           const data: ScheduleType[] = await getUpcomingSchedules();
-          console.log("📅 [Schedule Debug] API 응답 데이터:", data);
 
           // API 응답이 이미 정렬되어 있지 않다면 startTime 기준으로 정렬
           const sortedSchedules = data.sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime());
-          console.log("📅 [Schedule Debug] 정렬된 일정:", sortedSchedules);
 
           setUpcomingSchedules(sortedSchedules);
-          console.log("✅ [Schedule Debug] 일정 데이터 로드 성공");
         } catch (err: any) { // error 타입을 any로 명시
-          console.error("❌ [Schedule Debug] 다가오는 일정 로드 실패:", err);
-          console.error("❌ [Schedule Debug] 에러 메시지:", err.message || err);
-          console.error("❌ [Schedule Debug] 에러 스택:", err.stack);
 
           if (err.isAxiosError && err.response?.status === 401) { // Axios 에러인 경우
-            console.log("🔑 [Schedule Debug] 401 에러 - 인증 만료, /greeting으로 리다이렉트");
             router.push("/greeting");
           }
         } finally {
-          console.log("🏁 [Schedule Debug] 일정 로드 완료 (finally)");
           setIsLoading(false);
         }
       };
       fetchSchedules();
     } else {
-      console.log("⏸️ [Schedule Debug] 인증되지 않음 - 빈 배열로 설정");
       setUpcomingSchedules([]); // 인증되지 않으면 빈 배열로 설정
       setIsLoading(false);
     }
@@ -131,74 +101,48 @@ export default function Home() {
 
   // 1. Set nearest schedule from upcomingSchedules
   useEffect(() => {
-    console.log("🎯 [Nearest Schedule Debug] 가장 가까운 일정 계산 시작");
-    console.log("🎯 [Nearest Schedule Debug] upcomingSchedules 길이:", upcomingSchedules.length);
-
     if (upcomingSchedules.length > 0) {
       const nearest = upcomingSchedules[0];
-      console.log("🎯 [Nearest Schedule Debug] 가장 가까운 일정:", nearest);
       setNearestSchedule(nearest);
     } else {
-      console.log("🎯 [Nearest Schedule Debug] 일정이 없음");
       setNearestSchedule(null);
     }
   }, [upcomingSchedules]);
 
   // 2. Calculate schedule status when nearestSchedule changes
   useEffect(() => {
-    console.log("⏰ [Status Debug] 일정 상태 계산 시작, nearestSchedule:", nearestSchedule);
-
     if (nearestSchedule) {
       const now = new Date();
       const startTime = new Date(nearestSchedule.startTime);
       const diffMinutes = (startTime.getTime() - now.getTime()) / (1000 * 60);
 
-      console.log("⏰ [Status Debug] 현재 시간:", now);
-      console.log("⏰ [Status Debug] 일정 시작 시간:", startTime);
-      console.log("⏰ [Status Debug] 시간 차이 (분):", diffMinutes);
-
       if (diffMinutes < 0) {
-        console.log("⏰ [Status Debug] 상태: 지각");
         setScheduleStatusInfo({ text: "헉! 지각입니다!!", color: "#ff2f01" }); // 빨간색
       } else if (diffMinutes <= 5) {
-        console.log("⏰ [Status Debug] 상태: 곧 시작");
         setScheduleStatusInfo({ text: "곧 시작!", color: "#10B981", fontWeight: "700" }); // 녹색, 굵게
       } else if (diffMinutes <= 60) {
-        console.log("⏰ [Status Debug] 상태: 1시간 이내");
         setScheduleStatusInfo({ text: `약 ${Math.round(diffMinutes)}분 후`, color: "#0080FF" }); // 파란색
       } else {
-        console.log("⏰ [Status Debug] 상태: 1시간 이후");
         setScheduleStatusInfo({ text: `${format(startTime, "HH:mm")} 시작`, color: "#383838" }); // 기본 색상 (회색 계열)
       }
     } else {
-      console.log("⏰ [Status Debug] nearestSchedule이 없음 - 상태 초기화");
       setScheduleStatusInfo(null);
     }
   }, [nearestSchedule]);
 
   // 3. Fetch routine name when nearestSchedule (and its routineId) changes
   useEffect(() => {
-    console.log("🔄 [Routine Debug] 루틴 정보 로드 시작");
-    console.log("🔄 [Routine Debug] nearestSchedule:", nearestSchedule);
-    console.log("🔄 [Routine Debug] routineId:", nearestSchedule?.routineId);
-
     if (nearestSchedule && nearestSchedule.routineId) {
       const fetchRoutineName = async () => {
-        console.log("🔄 [Routine Debug] 루틴 API 호출 시작, routineId:", nearestSchedule.routineId);
         try {
           const routineData: RoutineInfo = await getRoutineById(nearestSchedule.routineId);
-          console.log("🔄 [Routine Debug] 루틴 API 응답:", routineData);
           setRoutineName(routineData.name);
-          console.log("✅ [Routine Debug] 루틴 이름 설정 완료:", routineData.name);
         } catch (error: any) {
-          console.error("❌ [Routine Debug] 루틴 정보 로드 실패:", error);
-          console.error("❌ [Routine Debug] 에러 메시지:", error.message || error);
           setRoutineName(null);
         }
       };
       fetchRoutineName();
     } else {
-      console.log("⏸️ [Routine Debug] routineId가 없음 - 루틴 이름 초기화");
       setRoutineName(null);
     }
   }, [nearestSchedule]);
@@ -207,7 +151,6 @@ export default function Home() {
   useEffect(() => {
     if (isAuthenticated) {
       setIsLoading(true);
-      console.log("📅 [Schedule] 일정 데이터 로딩 시작");
 
       // 두 API를 병렬로 호출하여 데이터 로딩 최적화
       Promise.all([
@@ -215,15 +158,11 @@ export default function Home() {
         getLatestInProgressSchedule()
       ])
           .then(([upcomingData, inProgressData]) => {
-            console.log("📅 [Schedule] 다가오는 일정:", upcomingData);
-            console.log("📅 [Schedule] 진행 중인 일정:", inProgressData);
-
             setUpcomingSchedules(upcomingData || []);
             setInProgressSchedule(inProgressData); // null 또는 Schedule 객체
             setIsLoading(false);
           })
           .catch(error => {
-            console.error("📅 [Schedule] 일정 데이터 로딩 오류:", error);
             setIsLoading(false);
           });
     }
@@ -233,7 +172,6 @@ export default function Home() {
   useEffect(() => {
     if (upcomingSchedules && upcomingSchedules.length > 0) {
       setNearestSchedule(upcomingSchedules[0]);
-      console.log("📅 [Schedule] 가장 가까운 일정 설정:", upcomingSchedules[0]);
     } else {
       setNearestSchedule(null);
     }
@@ -296,65 +234,55 @@ export default function Home() {
 
   // 루틴 이름 로드
   useEffect(() => {
-    // 진행 중이거나 다가오는 일정이 없으면 패스
-    if (!inProgressSchedule && !nearestSchedule) {
-      return;
-    }
-
-    // 진행 중 일정 우선, 없으면 다가오는 일정
-    const scheduleToUse = inProgressSchedule || nearestSchedule;
+    const scheduleToUse = inProgressSchedule || nearestSchedule; // scheduleToUse를 useEffect 내부에서 정의
 
     if (scheduleToUse && scheduleToUse.routineId) {
       getRoutineById(scheduleToUse.routineId)
-          .then((routine: RoutineInfo) => {
-            setRoutineName(routine.name);
+          .then((data: RoutineInfo) => { // API 응답 타입을 RoutineInfo로 명시
+            setRoutineName(data.name); // 기존 루틴 이름 설정 유지
+            setCurrentRoutineDetails(data); // 루틴 상세 정보 설정
           })
           .catch(error => {
-            console.error("🔄 [Routine] 루틴 정보 로딩 실패:", error);
             setRoutineName(null);
+            setCurrentRoutineDetails(null);
           });
     } else {
       setRoutineName(null);
+      setCurrentRoutineDetails(null);
     }
-  }, [inProgressSchedule, nearestSchedule]);
+  }, [inProgressSchedule, nearestSchedule]); // 의존성 배열은 기존과 동일하게 유지
+
+  useEffect(() => {
+    // 1분마다 현재 시간을 업데이트
+    const timerId = setInterval(() => {
+      setCurrentTime(new Date());
+    }, 60000); // 60000ms = 1분
+
+    // 컴포넌트가 언마운트될 때 인터벌을 정리합니다.
+    return () => clearInterval(timerId);
+  }, []);
 
   // 날짜 포맷팅 함수 - 타입 명시 추가
   const formatDateTime = (dateTimeString: string) => {
-    console.log("📅 [Format Debug] 날짜 포맷팅 시작:", dateTimeString);
     try {
       const date = new Date(dateTimeString);
       const formatted = format(date, "yyyy-MM-dd HH:mm");
-      console.log("📅 [Format Debug] 포맷팅 결과:", formatted);
       return formatted;
     } catch (error) {
-      console.error("❌ [Format Debug] 날짜 포맷팅 실패:", error);
       return "날짜 정보 없음";
     }
   };
 
   const handleSearchSubmit = (event: React.FormEvent<HTMLFormElement>) => {
-    console.log("🔍 [Search Debug] 검색 폼 제출");
-    console.log("🔍 [Search Debug] 검색 키워드:", keyword);
-
     event.preventDefault(); // 기본 폼 제출 동작 방지
 
     if (keyword.trim()) {
       const encodedKeyword = encodeURIComponent(keyword.trim());
       const chatUrl = `/chat?keyword=${encodedKeyword}`;
-      console.log("🔍 [Search Debug] 이동할 URL:", chatUrl);
       // /chat 페이지로 이동하면서 keyword를 쿼리 파라미터로 전달
       router.push(chatUrl);
-    } else {
-      console.log("⚠️ [Search Debug] 빈 키워드로 검색 시도됨");
     }
   };
-
-  console.log("🏠 [Home Component] 렌더링 중, 현재 상태:");
-  console.log("  - isLoading:", isLoading);
-  console.log("  - isAuthenticated:", isAuthenticated);
-  console.log("  - upcomingSchedules 개수:", upcomingSchedules.length);
-  console.log("  - nearestSchedule:", nearestSchedule?.title || "없음");
-  console.log("  - routineName:", routineName);
 
   return (
       <div className="flex flex-col w-full h-full">
@@ -651,74 +579,72 @@ export default function Home() {
                   </Link>
                   <div className="mt-[20px] mb-[13px] w-full h-[1px] bg-[#dfdfdf]"></div>
                   <div className="flex justify-between items-center w-full mb-[8px] ">
-                    <p className="text-[#383838] text-[17px] font-[600] tracking-[-0.4px] leading-[110%] line-clamp-1">
-                      진행 중인 루틴
+                    <p className="text-[#383838] text-[16px] font-[500] tracking-[-0.8px] leading-[155%] line-clamp-1 mb-[7px]">
+                      {currentRoutineDetails ? currentRoutineDetails.name : (routineName || "루틴 정보 로딩 중...")}
                     </p>
-                    <div className="flex items-center gap-x-[1px]">
-                      <span>🏃‍♂️&nbsp;</span>
-                      <span className="text-[#01274f] text-[15px] font-[600] tracking-[-0.8px] leading-[102%] line-clamp-1">
-                    집 -&gt; 학교 루틴 (65분)
-                  </span>
-                    </div>
                   </div>
                   <div className="flex flex-col gap-[9px]">
-                    <div className="w-full h-auto px-[10px] py-[5px] bg-[#888] rounded-[6px] flex items-center justify-between">
-                      <p className="text-[#fff] text-[14px] font-[600] tracking-[-0.5px] leading-[102%] line-clamp-1">
-                        모닝 커피 내리기
-                      </p>
-                      <div className="flex items-center gap-x-[1px]">
-                        <span>✅&nbsp;</span>
-                        <span className="text-[#fff] text-[15px] font-[600] tracking-[-0.8px] leading-[102%] line-clamp-1">
-                      5분
-                    </span>
-                        <span className="text-[#fff] text-[15px] font-[600] tracking-[-0.8px] leading-[102%] line-clamp-1">
-                      &nbsp; 완료
-                    </span>
-                      </div>
-                    </div>
-                    <div className="animate-pulse w-full h-auto px-[10px] py-[5px] bg-[#0080FF] rounded-[6px] flex items-center justify-between">
-                      <p className="text-[#fff] text-[14px] font-[600] tracking-[-0.5px] leading-[102%] line-clamp-1">
-                        머리 감기
-                      </p>
-                      <div className="flex items-center gap-x-[1px]">
-                        <span>⌛&nbsp;</span>
-                        <span className="text-[#fff] text-[15px] font-[600] tracking-[-0.8px] leading-[102%] line-clamp-1">
-                      10분
-                    </span>
-                        <span className="text-[#fff] text-[15px] font-[600] tracking-[-0.8px] leading-[102%] line-clamp-1">
-                      &nbsp; 진행 중
-                    </span>
-                      </div>
-                    </div>
+                    {currentRoutineDetails && currentRoutineDetails.items && currentRoutineDetails.items.length > 0 && scheduleToUse && scheduleToUse.startTime ? (
+                        (() => { // 즉시 실행 함수 (IIFE)를 사용하여 변수 스코프 및 로직 그룹화
+                          let accumulatedDurationMinutes = 0;
+                          const scheduleStartTimeDate = new Date(scheduleToUse.startTime);
 
-                    <div className="w-full h-auto px-[10px] py-[5px] bg-[#0080FF]/40 rounded-[6px] flex items-center justify-between">
-                      <p className="text-[#fff] text-[14px] font-[600] tracking-[-0.5px] leading-[102%] line-clamp-1">
-                        세수 하기
-                      </p>
-                      <div className="flex items-center gap-x-[1px]">
-                        <span>⏭️&nbsp;</span>
-                        <span className="text-[#fff] text-[15px] font-[600] tracking-[-0.8px] leading-[102%] line-clamp-1">
-                      10분
-                    </span>
-                        <span className="text-[#fff] text-[15px] font-[600] tracking-[-0.8px] leading-[102%] line-clamp-1">
-                      &nbsp; 대기 중
-                    </span>
-                      </div>
-                    </div>
-                    <div className="w-full h-auto px-[10px] py-[5px] bg-[#0080FF]/40 rounded-[6px] flex items-center justify-between">
-                      <p className="text-[#fff] text-[14px] font-[600] tracking-[-0.5px] leading-[102%] line-clamp-1">
-                        머리 말리기
-                      </p>
-                      <div className="flex items-center gap-x-[1px]">
-                        <span>⏭️&nbsp;</span>
-                        <span className="text-[#fff] text-[15px] font-[600] tracking-[-0.8px] leading-[102%] line-clamp-1">
-                      10분
-                    </span>
-                        <span className="text-[#fff] text-[15px] font-[600] tracking-[-0.8px] leading-[102%] line-clamp-1">
-                      &nbsp; 대기 중
-                    </span>
-                      </div>
-                    </div>
+                          // 스케줄 시작 시간이 유효한지 확인
+                          if (isNaN(scheduleStartTimeDate.getTime())) {
+                            console.error("Invalid schedule start time:", scheduleToUse.startTime);
+                            return <p className="text-center text-red-500 py-2">스케줄 시작 시간이 유효하지 않습니다.</p>;
+                          }
+
+                          return currentRoutineDetails.items.map((item, index) => {
+                            // 현재 아이템의 시작 시간 계산 (이전 아이템들의 소요시간 누적)
+                            const itemStartTime = new Date(scheduleStartTimeDate.getTime() + accumulatedDurationMinutes * 60000);
+
+                            const currentItemDuration = item.durationMinutes;
+
+                            // 현재 아이템의 종료 시간 계산
+                            const itemEndTime = new Date(itemStartTime.getTime() + currentItemDuration * 60000);
+
+                            // 다음 아이템의 시작 시간 계산을 위해 현재 아이템의 소요시간을 누적
+                            accumulatedDurationMinutes += currentItemDuration;
+
+                            let itemStatus: "완료" | "진행 중" | "대기 중" = "대기 중";
+                            let itemIcon = "⏭️"; // 대기 중 아이콘
+                            let itemBgColor = "bg-[#0080FF]/40"; // 대기 중 배경색
+
+                            if (currentTime >= itemEndTime) {
+                              itemStatus = "완료";
+                              itemIcon = "✅";
+                              itemBgColor = "bg-green-500"; // 완료 시 배경색
+                            } else if (currentTime >= itemStartTime && currentTime < itemEndTime) {
+                              itemStatus = "진행 중";
+                              itemIcon = "⌛"; // 진행 중 아이콘
+                              itemBgColor = "bg-[#0080FF]"; // 진행 중 배경색
+                            }
+                            // '대기 중' 상태는 위 조건에 해당하지 않으면 기본값으로 유지=
+
+                            return (
+                                <div key={item.id} className={`w-full h-auto px-[10px] py-[5px] ${itemBgColor} rounded-[6px] flex items-center justify-between transition-colors duration-300 ease-in-out`}>
+                                  <p className="text-[#fff] text-[14px] font-[600] tracking-[-0.5px] leading-[102%] line-clamp-1">
+                                    {item.name}
+                                  </p>
+                                  <div className="flex items-center gap-x-[1px]">
+                                    <span className="text-lg">{itemIcon}</span> {/* 아이콘 크기 조절 */}
+                                    <span className="text-[#fff] text-[15px] font-[600] tracking-[-0.8px] leading-[102%] line-clamp-1 ml-1">
+              {item.durationMinutes}분
+            </span>
+                                    <span className="text-[#fff] text-[15px] font-[600] tracking-[-0.8px] leading-[102%] line-clamp-1">
+              &nbsp;{itemStatus}
+            </span>
+                                  </div>
+                                </div>
+                            );
+                          });
+                        })() // IIFE 호출
+                    ) : scheduleToUse && scheduleToUse.routineId ? (
+                        <p className="text-center text-gray-500 py-2">루틴 아이템을 불러오는 중이거나 아이템이 없습니다.</p>
+                    ) : (
+                        <p className="text-center text-gray-500 py-2">선택된 루틴이 없습니다.</p>
+                    )}
                   </div>
                 </div>
             )}
@@ -772,7 +698,7 @@ export default function Home() {
                         return (
                             <Link
                                 key={schedule.id}
-                                href={`/calendar/schedules/${schedule.id}`}
+                                href={`/calendar/edit?id=${schedule.id}`}
                                 className="flex items-start flex-col justify-between gap-x-[10px] gap-y-[4px] w-full bg-[#fff] border-b-[1px] border-[#dfdfdf] py-[7px] px-[10px] lg:px-[20px] hover:bg-[#dfdfdf] last:!border-[0px] first:!pt-[0px] last:!pb-[0px]"
                             >
                               <p className="w-full text-[#383838] text-[13px] line-clamp-1 pr-[15px]">

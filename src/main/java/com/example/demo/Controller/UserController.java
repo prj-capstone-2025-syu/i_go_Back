@@ -1,5 +1,7 @@
 package com.example.demo.Controller;
 
+import com.example.demo.dto.NotificationSettingsDto;
+import com.example.demo.entity.user.User;
 import com.example.demo.dto.UserUpdateRequestDto;
 import com.example.demo.entity.entityInterface.AppUser;
 import com.example.demo.service.UserService;
@@ -83,4 +85,29 @@ public class UserController {
             return ResponseEntity.badRequest().body(Map.of("message", "회원 탈퇴 중 오류 발생: " + e.getMessage()));
         }
     }
+
+    @PutMapping("/me/settings/notifications")
+    public ResponseEntity<?> updateNotificationSettings(
+            @AuthenticationPrincipal AppUser appUser,
+            @RequestBody NotificationSettingsDto settingsDto) {
+        User updatedUser = userService.updateNotificationSettings(appUser.getId(), settingsDto);
+        // 업데이트된 전체 설정을 다시 DTO로 만들어 반환
+        NotificationSettingsDto newSettings = new NotificationSettingsDto(
+                updatedUser.isNotificationsEnabled(),
+                updatedUser.isNotifyTodaySchedule(),
+                updatedUser.isNotifyNextSchedule(),
+                updatedUser.isNotifyRoutineProgress(),
+                updatedUser.isNotifySupplies(),
+                updatedUser.isNotifyUnexpectedEvent(),
+                updatedUser.isNotifyAiFeature()
+        );
+        return ResponseEntity.ok(Map.of("message", "알림 설정이 업데이트되었습니다.", "settings", newSettings));
+    }
+
+    @GetMapping("/me/settings/notifications")
+    public ResponseEntity<NotificationSettingsDto> getNotificationSettings(@AuthenticationPrincipal AppUser appUser) {
+        NotificationSettingsDto settings = userService.getNotificationSettings(appUser.getId());
+        return ResponseEntity.ok(settings);
+    }
+
 }

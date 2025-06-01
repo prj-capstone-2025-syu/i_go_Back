@@ -3,6 +3,7 @@ package com.example.demo.service;
 import com.example.demo.entity.user.User;
 import com.example.demo.entity.user.UserStatus;
 import com.example.demo.repository.UserRepository;
+import com.example.demo.dto.NotificationSettingsDto;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -62,4 +63,49 @@ public class UserService {
         // user.setOauthId(null); // 재가입을 허용하려면 oauthId도 null 처리 또는 다른 값으로 변경
         userRepository.save(user);
     }
+
+    public User updateNotificationSettings(Long userId, NotificationSettingsDto settingsDto) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new IllegalArgumentException("사용자를 찾을 수 없습니다. ID: " + userId));
+
+        // 각 설정 값을 DTO로부터 업데이트 (null이 아닐 경우에만)
+        if (settingsDto.getNotificationsEnabled() != null) {
+            user.setNotificationsEnabled(settingsDto.getNotificationsEnabled());
+        }
+        if (settingsDto.getNotifyTodaySchedule() != null) {
+            user.setNotifyTodaySchedule(settingsDto.getNotifyTodaySchedule());
+        }
+        if (settingsDto.getNotifyNextSchedule() != null) {
+            user.setNotifyNextSchedule(settingsDto.getNotifyNextSchedule());
+        }
+        if (settingsDto.getNotifyRoutineProgress() != null) {
+            user.setNotifyRoutineProgress(settingsDto.getNotifyRoutineProgress());
+        }
+        if (settingsDto.getNotifySupplies() != null) {
+            user.setNotifySupplies(settingsDto.getNotifySupplies());
+        }
+        if (settingsDto.getNotifyUnexpectedEvent() != null) {
+            user.setNotifyUnexpectedEvent(settingsDto.getNotifyUnexpectedEvent());
+        }
+        if (settingsDto.getNotifyAiFeature() != null) {
+            user.setNotifyAiFeature(settingsDto.getNotifyAiFeature());
+        }
+        return userRepository.save(user);
+    }
+
+    @Transactional(readOnly = true)
+    public NotificationSettingsDto getNotificationSettings(Long userId) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new IllegalArgumentException("사용자를 찾을 수 없습니다. ID: " + userId));
+        return new NotificationSettingsDto(
+                user.isNotificationsEnabled(),
+                user.isNotifyTodaySchedule(),
+                user.isNotifyNextSchedule(),
+                user.isNotifyRoutineProgress(),
+                user.isNotifySupplies(),
+                user.isNotifyUnexpectedEvent(),
+                user.isNotifyAiFeature()
+        );
+    }
+
 }

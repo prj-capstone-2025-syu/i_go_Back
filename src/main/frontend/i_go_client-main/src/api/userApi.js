@@ -32,3 +32,19 @@ export const updateUserInfo = async (userData) => {
     const response = await api.put('/user/me', userData);
     return response.data;
 };
+
+// 사용자 알림 설정을 가져오는 함수
+export const getNotificationSettings = async () => {
+    const response = await axios.get(`${API_URL}/api/user/me/settings/notifications`, {
+        withCredentials: true, // 인증 쿠키를 포함하여 요청
+    });
+    return response.data;
+};
+
+// 사용자 알림 설정을 업데이트하는 함수
+export const updateNotificationSettings = async (settings) => {
+    const response = await axios.put(`${API_URL}/api/user/me/settings/notifications`, settings, {
+        withCredentials: true, // 인증 쿠키를 포함하여 요청
+    });
+    return response.data; // 서버에서 업데이트된 전체 설정을 반환한다고 가정합니다.
+};
