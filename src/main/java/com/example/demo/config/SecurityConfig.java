@@ -12,7 +12,7 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
-import org.springframework.security.config.http.SessionCreationPolicy; // 확인
+import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.crypto.factory.PasswordEncoderFactories;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.oauth2.client.authentication.OAuth2AuthenticationToken;
@@ -62,11 +62,25 @@ public class SecurityConfig {
                 .httpBasic(httpBasic -> httpBasic.disable())
                 .formLogin(formLogin -> formLogin.disable())
                 .sessionManagement(session -> session
-                        .sessionCreationPolicy(SessionCreationPolicy.IF_REQUIRED)) // STATELESS에서 IF_REQUIRED로 변경
+                        .sessionCreationPolicy(SessionCreationPolicy.IF_REQUIRED))
                 .authorizeHttpRequests(authorize -> authorize
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
-                        .requestMatchers("/", "/login/**", "/oauth2/**", "/user/profile/edit", "/calendar-test", "/error").permitAll()
-                        .anyRequest().authenticated()
+                        .requestMatchers(
+                                "/greeting", // Greeting 페이지
+                                "/login/**", // 로그인 관련 경로
+                                "/oauth2/**", // OAuth2 관련 경로
+                                "/error",     // 에러 페이지
+                                // 프론트엔드 정적 리소스 및 Next.js 내부 경로 (필요에 따라 추가)
+                                "/favicon.ico",
+                                "/logo.png", // greeting 페이지에서 사용될 수 있는 이미지
+                                "/_next/**", // Next.js 빌드 파일
+                                "/static/**", // 기타 정적 파일
+                                "/manifest.json",
+                                "/robots.txt",
+                                "/firebase-messaging-sw.js" // FCM 서비스 워커
+                        ).permitAll()
+                        .requestMatchers("/api/**").authenticated() // API 경로는 인증 필요
+                        .anyRequest().authenticated() // 그 외 모든 요청은 인증 필요 (루트 포함)
                 )
                 .oauth2Login(oauth2 -> oauth2
                         .userInfoEndpoint(userInfo -> userInfo
@@ -80,13 +94,15 @@ public class SecurityConfig {
 
                             Cookie cookie = new Cookie("access_token", token);
                             cookie.setPath("/");
-                            cookie.setHttpOnly(false); // 개발 환경에서는 false, 프로덕션에서는 true 권장
-                            cookie.setMaxAge(3600); // 1시간
-                            // cookie.setSecure(true); // HTTPS 환경에서만 사용
+                            cookie.setHttpOnly(false);
+                            cookie.setMaxAge(3600);
                             response.addCookie(cookie);
 
-                            response.sendRedirect(frontendUrl);
+                            response.sendRedirect(frontendUrl); // 로그인 성공 시 프론트엔드 루트로 리다이렉트
                         })
+                )
+                .exceptionHandling(exceptionHandling ->
+                        exceptionHandling.authenticationEntryPoint(new CustomAuthenticationEntryPoint(frontendUrl + "/greeting"))
                 )
                 .addFilterBefore(
                         new JwtAuthenticationFilter(jwtTokenProvider, userRepository),

@@ -231,6 +231,14 @@ public class ScheduleService {
         return scheduleRepository.findByUserIdAndStartTime(userId, dateTime);
     }
 
+    @Transactional(readOnly = true)
+    public Optional<Schedule> getLatestInProgressSchedule(Long userId) {
+        LocalDateTime now = LocalDateTime.now();
+        // 가장 최근에 시작된 진행 중인 일정 1개를 가져온다.
+        List<Schedule> schedules = scheduleRepository.findLatestInProgressSchedulesByUserId(userId, now, PageRequest.of(0, 1));
+        return schedules.isEmpty() ? Optional.empty() : Optional.of(schedules.get(0));
+    }
+
     //파이어베이스 -> 매 분마다 실행되어 스케줄 시작 알림 및 루틴 아이템 시작 알림을 전송
     @Scheduled(cron = "0 * * * * ?") // 매 분 0초에 실행
     public void sendScheduleAndRoutineNotifications() {

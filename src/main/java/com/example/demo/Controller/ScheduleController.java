@@ -14,6 +14,8 @@ import org.springframework.web.bind.annotation.*;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
+
 
 @RestController
 @RequestMapping("/api/schedules")
@@ -95,4 +97,18 @@ public class ScheduleController {
         List<Schedule> schedules = scheduleService.getUpcomingSchedules(appUser.getId(), limit);
         return ResponseEntity.ok(schedules);
     }
+
+    // 진행 중인 가장 최근 일정 1개 조회 API
+    @GetMapping("/in-progress/latest")
+    public ResponseEntity<?> getLatestInProgressSchedule(@AuthenticationPrincipal AppUser appUser) {
+        if (appUser == null) {
+            return ResponseEntity.status(401).body(Map.of("message", "인증되지 않은 사용자입니다."));
+        }
+        Optional<Schedule> scheduleOpt = scheduleService.getLatestInProgressSchedule(appUser.getId());
+        // Optional이 비어있으면 null을, 아니면 Schedule 객체를 반환
+        // 클라이언트에서는 null을 통해 진행 중인 일정이 없음을 판단
+        return scheduleOpt.<ResponseEntity<?>>map(ResponseEntity::ok)
+                .orElseGet(() -> ResponseEntity.ok(null));
+    }
+
 }

@@ -3,7 +3,7 @@ import NavBar from "@/components/common/topNav";
 import React, { useState, useEffect } from "react";
 import { createSchedule } from "@/api/scheduleApi";
 import { getRoutineNames } from "@/api/routineApi";
-import {router} from "next/client";
+import { useRouter } from "next/navigation";
 
 interface RoutineName {
   id: number;
@@ -11,6 +11,7 @@ interface RoutineName {
 }
 
 export default function CreateSchedule() {
+  const router = useRouter();
   const [selectedRoutine, setSelectedRoutine] = useState<string>("");
   const [routines, setRoutines] = useState<RoutineName[]>([]);
   const [formData, setFormData] = useState({

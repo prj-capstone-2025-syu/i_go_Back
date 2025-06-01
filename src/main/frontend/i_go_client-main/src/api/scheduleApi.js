@@ -87,3 +87,19 @@ export const getUpcomingSchedules = async (limit = 3) => {
         throw error;
     }
 };
+
+//진행 중 일정 조회
+// 진행 중인 가장 최근 일정 1개 조회 API
+export const getLatestInProgressSchedule = async () => {
+    try {
+        const response = await api.get(`/schedules/in-progress/latest`);
+        return response.data; // ScheduleType | null (백엔드에서 일정이 없으면 null 반환)
+    } catch (error) {
+        console.error('진행 중인 일정 조회 중 오류 발생:', error);
+        // 백엔드에서 일정이 없을 때 null을 반환하도록 처리
+        if (error.response && error.response.status === 404) { // 404도 "없음"으로 간주
+            return null;
+        }
+        throw error;
+    }
+};

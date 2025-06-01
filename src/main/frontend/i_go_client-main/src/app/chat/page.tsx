@@ -596,13 +596,16 @@ const MessageInput: React.FC<MessageInputProps> = ({ onSendMessage }) => {
 
 // --- ChatInterface 컴포넌트 (메인 채팅 UI 로직) ---
 const ChatInterface = ({
-  initialKeyword,
-}: {
+                         initialKeyword,
+                       }: {
   initialKeyword?: string | null;
 }) => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const messageAreaRef = useRef<HTMLDivElement>(null);
   const [inputValue, setInputValue] = useState("");
+
+  // 🔧 핵심 수정사항: useRef를 사용하여 초기화 중복 실행 방지
+  const initializedRef = useRef(false);
 
   const currentUser: User = {
     name: "나",
@@ -610,7 +613,7 @@ const ChatInterface = ({
   };
   const aiPartner: User = {
     name: "아이고 AI",
-    avatarUrl: "/icon/aigo-ai-logo.svg",
+    avatarUrl: "/logo.png",
     lastSeen: "언제나 당신 곁에",
   };
 
@@ -618,14 +621,14 @@ const ChatInterface = ({
   const [loading, setLoading] = useState(false);
 
   const addMessage = (
-    text: string,
-    sender: User,
-    isSenderMe: boolean,
-    role: 'user' | 'ai',
-    data?: any[]
+      text: string,
+      sender: User,
+      isSenderMe: boolean,
+      role: 'user' | 'ai',
+      data?: any[]
   ) => {
     const newMessage: Message = {
-      id: String(Date.now()) + Math.random(),
+      id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`, // 🔧 ID 생성 개선
       text: text,
       time: new Date().toLocaleTimeString([], {
         hour: "2-digit",
@@ -648,7 +651,6 @@ const ChatInterface = ({
     setLoading(true);
     try {
       const data = await sendChatMessage(message);
-      // data.message: 텍스트, data.data: 일정 리스트(있으면)
       addMessage(data.message, aiPartner, false, 'ai', data.data);
     } catch (e) {
       addMessage("오류가 발생했습니다.", aiPartner, false, 'ai');
@@ -656,26 +658,37 @@ const ChatInterface = ({
     setLoading(false);
   };
 
+  // 🔧 핵심 수정사항: useEffect 중복 실행 방지 및 로직 개선
   useEffect(() => {
-    if (initialKeyword) {
-      addMessage(
-        "안녕하세요! 아이고 AI입니다. 무엇을 도와드릴까요?",
-        aiPartner,
-        false,
-        'ai'
-      );
-      handleSend(initialKeyword);
-    } else {
-      addMessage(
-        "안녕하세요! 아이고 AI입니다. 무엇을 도와드릴까요?",
-        aiPartner,
-        false,
-        'ai'
-      );
+    // 이미 초기화되었으면 중복 실행 방지
+    if (initializedRef.current) {
+      return;
     }
-    // eslint-disable-next-line
-  }, [initialKeyword]);
 
+    const initializeChat = async () => {
+      initializedRef.current = true; // 🔧 초기화됨으로 표시
+
+      // 초기 인사말 추가
+      addMessage(
+          "안녕하세요! 아이고 AI입니다. 무엇을 도와드릴까요?",
+          aiPartner,
+          false,
+          'ai'
+      );
+
+      // initialKeyword가 있을 때만 자동으로 메시지 전송
+      if (initialKeyword && initialKeyword.trim()) {
+        // 약간의 지연을 주어 자연스럽게 처리
+        setTimeout(() => {
+          handleSend(initialKeyword.trim());
+        }, 500);
+      }
+    };
+
+    initializeChat();
+  }, []); // 🔧 의존성 배열을 빈 배열로 변경하여 한 번만 실행되도록 함
+
+  // 스크롤 자동 이동
   useEffect(() => {
     if (messageAreaRef.current) {
       messageAreaRef.current.scrollTop = messageAreaRef.current.scrollHeight;
@@ -683,44 +696,39 @@ const ChatInterface = ({
   }, [messages]);
 
   return (
-    <div
-      id="chatInterface"
-      className="flex flex-col grow h-full w-full bg-[#F9F9F9] overflow-hidden"
-      role="region"
-    >
-      {" "}
-      {/* 배경색 및 overflow 수정 */}
-      <ChatHeader
-        participant={aiPartner}
-        lastSeen={aiPartner.lastSeen}
-        onBack={() => window.history.back()}
-        onSearch={() => alert("Search clicked")}
-        onMenuToggle={() => setIsMenuOpen(!isMenuOpen)}
-        isMenuOpen={isMenuOpen}
-      />
-      <div className="relative z-10">
-        {" "}
-        {/* 메뉴가 다른 요소 위에 오도록 z-index 추가 */}
-        {isMenuOpen && <ConversationMenu />}
-      </div>
       <div
-        ref={messageAreaRef}
-        className="grow px-4 py-5 flex flex-col overflow-y-auto scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100 gap-y-4"
+          id="chatInterface"
+          className="flex flex-col grow h-full w-full bg-[#F9F9F9] overflow-hidden"
+          role="region"
       >
-        <div className="w-full h-full">
-          {messages.map((msg) => (
-            <MessageItem key={msg.id} message={msg} />
-          ))}
-          {loading && (
-            <div className="text-left text-gray-400 px-2 py-1">AI가 답변 중...</div>
-          )}
+        <ChatHeader
+            participant={aiPartner}
+            lastSeen={aiPartner.lastSeen}
+            onBack={() => window.history.back()}
+            onSearch={() => alert("Search clicked")}
+            onMenuToggle={() => setIsMenuOpen(!isMenuOpen)}
+            isMenuOpen={isMenuOpen}
+        />
+        <div className="relative z-10">
+          {isMenuOpen && <ConversationMenu />}
         </div>
+        <div
+            ref={messageAreaRef}
+            className="grow px-4 py-5 flex flex-col overflow-y-auto scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100 gap-y-4"
+        >
+          <div className="w-full h-full">
+            {messages.map((msg) => (
+                <MessageItem key={msg.id} message={msg} />
+            ))}
+            {loading && (
+                <div className="text-left text-gray-400 px-2 py-1">AI가 답변 중...</div>
+            )}
+          </div>
+        </div>
+        <MessageInput onSendMessage={handleSend} />
       </div>
-      <MessageInput onSendMessage={handleSend} />
-    </div>
   );
 };
-// --- ChatInterface 컴포넌트 끝 ---
 
 // --- /chat 페이지의 실제 컨텐츠를 렌더링하는 컴포넌트 ---
 function ChatPageContent() {
@@ -733,17 +741,17 @@ function ChatPageContent() {
 // --- /chat 페이지 기본 내보내기 ---
 export default function ChatPage() {
   return (
-    <Suspense
-      fallback={
-        <div className="flex justify-center items-center h-screen text-xl">
-          채팅 로딩 중...
+      <Suspense
+          fallback={
+            <div className="flex justify-center items-center h-screen text-xl">
+              채팅 로딩 중...
+            </div>
+          }
+      >
+        <div className="flex flex-col w-full h-full">
+          <NavBarMain link="/mypage" />
+          <ChatPageContent />
         </div>
-      }
-    >
-      <div className="flex flex-col w-full h-full">
-        <NavBarMain link="/mypage" />
-        <ChatPageContent />
-      </div>
-    </Suspense>
+      </Suspense>
   );
 }
