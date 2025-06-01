@@ -1,5 +1,6 @@
 package com.example.demo.Controller;
 
+import com.example.demo.dto.FcmTokenRequest;
 import com.example.demo.dto.NotificationSettingsDto;
 import com.example.demo.entity.user.User;
 import com.example.demo.dto.UserUpdateRequestDto;
@@ -110,4 +111,20 @@ public class UserController {
         return ResponseEntity.ok(settings);
     }
 
+    @PostMapping("/fcm-token")
+    public ResponseEntity<?> saveFcmToken(@AuthenticationPrincipal AppUser appUser, @RequestBody FcmTokenRequest fcmTokenRequest) {
+        if (appUser == null) {
+            return ResponseEntity.status(401).body(Map.of("message", "인증되지 않은 사용자입니다."));
+        }
+        if (fcmTokenRequest == null || fcmTokenRequest.getFcmToken() == null || fcmTokenRequest.getFcmToken().isEmpty()) {
+            return ResponseEntity.badRequest().body(Map.of("message", "FCM 토큰이 제공되지 않았습니다."));
+        }
+        try {
+            userService.saveUserFcmToken(appUser.getId(), fcmTokenRequest.getFcmToken());
+            return ResponseEntity.ok(Map.of("message", "FCM 토큰이 성공적으로 저장되었습니다."));
+        } catch (Exception e) {
+            // 실제 운영 환경에서는 로깅을 추가하는 것이 좋습니다.
+            return ResponseEntity.internalServerError().body(Map.of("message", "FCM 토큰 저장 중 오류 발생: " + e.getMessage()));
+        }
+    }
 }

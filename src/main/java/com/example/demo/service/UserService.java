@@ -4,6 +4,7 @@ import com.example.demo.entity.user.User;
 import com.example.demo.entity.user.UserStatus;
 import com.example.demo.repository.UserRepository;
 import com.example.demo.dto.NotificationSettingsDto;
+import jakarta.persistence.EntityNotFoundException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -108,4 +109,11 @@ public class UserService {
         );
     }
 
+    // FCM 토큰 저장 메서드
+    public void saveUserFcmToken(Long userId, String fcmToken) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new EntityNotFoundException("User not found with id: " + userId));
+        user.setFcmToken(fcmToken);
+        userRepository.save(user);
+    }
 }

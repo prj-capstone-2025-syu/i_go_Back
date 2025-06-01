@@ -8,6 +8,9 @@ import { useRouter } from "next/navigation";
 import { format } from "date-fns";
 import { getUpcomingSchedules, getLatestInProgressSchedule } from "@/api/scheduleApi";
 import { getRoutineById } from "@/api/routineApi"; // 루틴 정보를 가져오기 위한 API 함수
+import { sendFCMTokenToServer } from "@/api/userApi"; // FCM 토큰 전송 함수 임포트
+import { getMessaging, getToken } from "firebase/messaging"; // Firebase 메시징 임포트
+import { app } from "@/utils/firebase"; // Firebase 앱 임포트
 
 // 타입 정의
 interface ScheduleType {
@@ -66,6 +69,40 @@ export default function Home() {
       router.push('/greeting');
     }
   }, [router]);
+
+  // FCM 토큰 요청 및 서버 전송 로직
+  useEffect(() => {
+    if (typeof window !== 'undefined' && 'Notification' in window && isAuthenticated) {
+      const messaging = getMessaging(app);
+
+      const requestPermissionAndToken = async () => {
+        try {
+          const permission = await Notification.requestPermission();
+          if (permission === "granted") {
+            console.log("Notification permission granted.");
+            // Firebase 콘솔에서 가져온 VAPID 키를 사용해야 합니다.
+            // 프로젝트 설정 > 클라우드 메시징 > 웹 푸시 인증서 > 웹 구성의 키 쌍
+            const currentToken = await getToken(messaging, {
+              vapidKey: "BK6gC7kpp7i9gv1WMQuWsW_487xmyfsXWtE0DERzOUunoCWN3fzoJ0JwP3BIL_d4pYGcjlGxhjjmD59-0UGzoug", // 여기에 실제 VAPID 키를 입력하세요.
+            });
+            if (currentToken) {
+              console.log("FCM Token:", currentToken);
+              await sendFCMTokenToServer(currentToken);
+              console.log("FCM token sent to server.");
+            } else {
+              console.log("No registration token available. Request permission to generate one.");
+            }
+          } else {
+            console.log("Unable to get permission to notify.");
+          }
+        } catch (error) {
+          console.error("An error occurred while retrieving token. ", error);
+        }
+      };
+
+      requestPermissionAndToken();
+    }
+  }, [isAuthenticated]); // isAuthenticated 상태가 true일 때만 실행
 
   useEffect(() => {
     AOS.init();
@@ -184,6 +221,47 @@ export default function Home() {
       setScheduleStatusInfo(null);
       return;
     }
+
+    // 1초미다 현재 시간 업데이트
+    useEffect(() => {
+      const timer = setInterval(() => {
+        setCurrentTime(new Date());
+      }, 1000); // 1초마다 현재 시간 업데이트
+      return () => clearInterval(timer);
+    }, []);
+
+    // FCM 토큰 요청 및 서버 전송 로직
+    useEffect(() => {
+      if (typeof window !== 'undefined' && 'Notification' in window && isAuthenticated) {
+        const messaging = getMessaging(app);
+
+        const requestPermissionAndToken = async () => {
+          try {
+            const permission = await Notification.requestPermission();
+            if (permission === "granted") {
+              console.log("Notification permission granted.");
+              // VAPID 키는 Firebase 콘솔에서 가져와야 합니다.
+              // 프로젝트 설정 > 클라우드 메시징 > 웹 푸시 인증서 > 웹 구성의 키 쌍
+              const currentToken = await getToken(messaging, {
+                vapidKey: "YOUR_VAPID_KEY_HERE", // 여기에 실제 VAPID 키를 입력하세요.
+              });
+              if (currentToken) {
+                console.log("FCM Token:", currentToken);
+                await sendFCMTokenToServer(currentToken);
+              } else {
+                console.log("No registration token available. Request permission to generate one.");
+              }
+            } else {
+              console.log("Unable to get permission to notify.");
+            }
+          } catch (error) {
+            console.error("An error occurred while retrieving token. ", error);
+          }
+        };
+
+        requestPermissionAndToken();
+      }
+    }, [isAuthenticated]); // isAuthenticated 상태가 true일 때만 실행
 
     // 현재 표시할 일정 (진행 중 > 다가오는 순으로 우선순위)
     const scheduleToUse = inProgressSchedule || nearestSchedule;
