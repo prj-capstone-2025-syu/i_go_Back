@@ -2,7 +2,18 @@
 import NavBarMain from "@/components/common/topNavMain";
 import Link from "next/link";
 import {useEffect, useState} from "react";
-import {getCurrentUser} from "@/api/userApi";
+import {getCurrentUser, getRecentNotifications} from "@/api/userApi"; // getRecentNotifications 추가
+
+// 알림 데이터 타입을 정의합니다.
+interface Notification {
+    id: number;
+    title: string;
+    body: string;
+    isRead: boolean;
+    createdAt: string; // ISO 8601 형식의 문자열로 가정 (예: "2024-06-02T10:30:00")
+    relatedId?: number;
+    notificationType?: string;
+}
 
 export default function Home() {
     const [user, setUser] = useState({
@@ -13,25 +24,54 @@ export default function Home() {
         role: ""
     });
     const [loading, setLoading] = useState(true);
-    const [error, setError] = useState(null);
+    const [error, setError] = useState<string | null>(null);
+
+    const [notifications, setNotifications] = useState<Notification[]>([]);
+    const [notificationsLoading, setNotificationsLoading] = useState(true);
+    const [notificationsError, setNotificationsError] = useState<string | null>(null);
 
     useEffect(() => {
         const fetchUserData = async () => {
             try {
                 setLoading(true);
+                setError(null);
                 const userData = await getCurrentUser();
                 setUser(userData);
             } catch (err) {
                 console.error("사용자 정보 가져오기 실패:", err);
-                // @ts-ignore
                 setError("사용자 정보를 불러오는데 실패했습니다");
             } finally {
                 setLoading(false);
             }
         };
 
+        const fetchNotifications = async () => {
+            try {
+                setNotificationsLoading(true);
+                setNotificationsError(null);
+                const recentNotifications = await getRecentNotifications(7); // 최근 7개 알림
+                setNotifications(recentNotifications);
+            } catch (err) {
+                console.error("최근 알림 가져오기 실패:", err);
+                setNotificationsError("최근 알림을 불러오는데 실패했습니다.");
+            } finally {
+                setNotificationsLoading(false);
+            }
+        };
+
         fetchUserData();
+        fetchNotifications();
     }, []);
+
+    const formatDateTime = (dateTimeString: string) => {
+        const date = new Date(dateTimeString);
+        const year = date.getFullYear();
+        const month = (date.getMonth() + 1).toString().padStart(2, '0');
+        const day = date.getDate().toString().padStart(2, '0');
+        const hours = date.getHours().toString().padStart(2, '0');
+        const minutes = date.getMinutes().toString().padStart(2, '0');
+        return `${year}-${month}-${day} ${hours}:${minutes}`;
+    };
 
     return (
         <div className="flex flex-col w-full h-full">
@@ -72,7 +112,7 @@ export default function Home() {
                   {user.email || "이메일 정보 없음"}
                 </span>
                             </div>
-                            <img className="w-[24px]" src="/icon/edit.svg"></img>
+                            <img className="w-[24px]" src="/icon/edit.svg" alt="edit"/>
                         </Link>
                     )}
 
@@ -83,7 +123,7 @@ export default function Home() {
                         <p className="text-[18px] font-[500] text-[#01274F] leading-[130%] line-clamp-1">
                             나의 루틴 설정하기
                         </p>
-                        <img className="w-[24px]" src="/icon/setting.svg"></img>
+                        <img className="w-[24px]" src="/icon/setting.svg" alt="setting"/>
                     </Link>
                     {/* 알람 목록 */}
                     <div className="flex justify-between items-end w-full mb-[0px] px-[5px]">
@@ -93,99 +133,30 @@ export default function Home() {
                     </div>
                     <div
                         className="w-full bg-[#fff] p-[15px] rounded-[6px] shadow-[0px_0px_5px_rgba(0,0,0,0.2)] mb-[22px]">
-                        <Link
-                            href="#"
-                            className="flex items-start  flex-col  justify-between gap-x-[10px] gap-y-[4px] w-full bg-[#fff] border-b-[1px] border-[#dfdfdf] py-[7px] px-[10px] lg:px-[20px] hover:bg-[#dfdfdf] last:!border-[0px] first:!pt-[0px] last:!pb-[0px]"
-                        >
-                            <p className="w-full text-[#383838] text-[13px] line-clamp-3 pr-[15px]">
-                                제목은 3줄까지만 표시됩니다.
-                            </p>
-                            <div className="flex flex-row gap-x-[3px] md:gap-x-[15px] xl:gap-x-[65px]">
-                                <p className="w-full text-[#777] text-[13px] pr-[5px] min-w-[68px] text-left md:text-center whitespace-nowrap">
-                                    YYYY-MM-DD TT:MM
-                                </p>
-                            </div>
-                        </Link>
-                        <Link
-                            href="#"
-                            className="flex items-start  flex-col  justify-between gap-x-[10px] gap-y-[4px] w-full bg-[#fff] border-b-[1px] border-[#dfdfdf] py-[7px] px-[10px] lg:px-[20px] hover:bg-[#dfdfdf] last:!border-[0px] first:!pt-[0px] last:!pb-[0px]"
-                        >
-                            <p className="w-full text-[#383838] text-[13px] line-clamp-3 pr-[15px]">
-                                제목은 3줄까지만 표시됩니다. 제목은 3줄까지만 표시됩니다.제목은
-                                3줄까지만 표시됩니다.제목은 3줄까지만 표시됩니다.제목은
-                                3줄까지만 표시됩니다.
-                            </p>
-                            <div className="flex flex-row gap-x-[3px] md:gap-x-[15px] xl:gap-x-[65px]">
-                                <p className="w-full text-[#777] text-[13px] pr-[5px] min-w-[68px] text-left md:text-center whitespace-nowrap">
-                                    YYYY-MM-DD TT:MM
-                                </p>
-                            </div>
-                        </Link>
-                        <Link
-                            href="#"
-                            className="flex items-start  flex-col  justify-between gap-x-[10px] gap-y-[4px] w-full bg-[#fff] border-b-[1px] border-[#dfdfdf] py-[7px] px-[10px] lg:px-[20px] hover:bg-[#dfdfdf] last:!border-[0px] first:!pt-[0px] last:!pb-[0px]"
-                        >
-                            <p className="w-full text-[#383838] text-[13px] line-clamp-3 pr-[15px]">
-                                제목은 3줄까지만 표시됩니다.
-                            </p>
-                            <div className="flex flex-row gap-x-[3px] md:gap-x-[15px] xl:gap-x-[65px]">
-                                <p className="w-full text-[#777] text-[13px] pr-[5px] min-w-[68px] text-left md:text-center whitespace-nowrap">
-                                    YYYY-MM-DD TT:MM
-                                </p>
-                            </div>
-                        </Link>
-                        <Link
-                            href="#"
-                            className="flex items-start  flex-col  justify-between gap-x-[10px] gap-y-[4px] w-full bg-[#fff] border-b-[1px] border-[#dfdfdf] py-[7px] px-[10px] lg:px-[20px] hover:bg-[#dfdfdf] last:!border-[0px] first:!pt-[0px] last:!pb-[0px]"
-                        >
-                            <p className="w-full text-[#383838] text-[13px] line-clamp-3 pr-[15px]">
-                                제목은 3줄까지만 표시됩니다.
-                            </p>
-                            <div className="flex flex-row gap-x-[3px] md:gap-x-[15px] xl:gap-x-[65px]">
-                                <p className="w-full text-[#777] text-[13px] pr-[5px] min-w-[68px] text-left md:text-center whitespace-nowrap">
-                                    YYYY-MM-DD TT:MM
-                                </p>
-                            </div>
-                        </Link>
-                        <Link
-                            href="#"
-                            className="flex items-start  flex-col  justify-between gap-x-[10px] gap-y-[4px] w-full bg-[#fff] border-b-[1px] border-[#dfdfdf] py-[7px] px-[10px] lg:px-[20px] hover:bg-[#dfdfdf] last:!border-[0px] first:!pt-[0px] last:!pb-[0px]"
-                        >
-                            <p className="w-full text-[#383838] text-[13px] line-clamp-3 pr-[15px]">
-                                제목은 3줄까지만 표시됩니다.
-                            </p>
-                            <div className="flex flex-row gap-x-[3px] md:gap-x-[15px] xl:gap-x-[65px]">
-                                <p className="w-full text-[#777] text-[13px] pr-[5px] min-w-[68px] text-left md:text-center whitespace-nowrap">
-                                    YYYY-MM-DD TT:MM
-                                </p>
-                            </div>
-                        </Link>
-                        <Link
-                            href="#"
-                            className="flex items-start  flex-col  justify-between gap-x-[10px] gap-y-[4px] w-full bg-[#fff] border-b-[1px] border-[#dfdfdf] py-[7px] px-[10px] lg:px-[20px] hover:bg-[#dfdfdf] last:!border-[0px] first:!pt-[0px] last:!pb-[0px]"
-                        >
-                            <p className="w-full text-[#383838] text-[13px] line-clamp-3 pr-[15px]">
-                                제목은 3줄까지만 표시됩니다.
-                            </p>
-                            <div className="flex flex-row gap-x-[3px] md:gap-x-[15px] xl:gap-x-[65px]">
-                                <p className="w-full text-[#777] text-[13px] pr-[5px] min-w-[68px] text-left md:text-center whitespace-nowrap">
-                                    YYYY-MM-DD TT:MM
-                                </p>
-                            </div>
-                        </Link>
-                        <Link
-                            href="#"
-                            className="flex items-start  flex-col  justify-between gap-x-[10px] gap-y-[4px] w-full bg-[#fff] border-b-[1px] border-[#dfdfdf] py-[7px] px-[10px] lg:px-[20px] hover:bg-[#dfdfdf] last:!border-[0px] first:!pt-[0px] last:!pb-[0px]"
-                        >
-                            <p className="w-full text-[#383838] text-[13px] line-clamp-3 pr-[15px]">
-                                제목은 3줄까지만 표시됩니다.
-                            </p>
-                            <div className="flex flex-row gap-x-[3px] md:gap-x-[15px] xl:gap-x-[65px]">
-                                <p className="w-full text-[#777] text-[13px] pr-[5px] min-w-[68px] text-left md:text-center whitespace-nowrap">
-                                    YYYY-MM-DD TT:MM
-                                </p>
-                            </div>
-                        </Link>
+                        {notificationsLoading ? (
+                            <p className="text-center p-4">알림을 불러오는 중...</p>
+                        ) : notificationsError ? (
+                            <p className="text-center p-4 text-red-500">{notificationsError}</p>
+                        ) : notifications.length === 0 ? (
+                            <p className="text-center p-4 text-[#777]">최근 알림이 없습니다.</p>
+                        ) : (
+                            notifications.map((notification) => (
+                                <Link
+                                    href="#" // 임시로 # 처리
+                                    key={notification.id}
+                                    className="flex items-start  flex-col  justify-between gap-x-[10px] gap-y-[4px] w-full bg-[#fff] border-b-[1px] border-[#dfdfdf] py-[7px] px-[10px] lg:px-[20px] hover:bg-[#dfdfdf] last:!border-[0px] first:!pt-[0px] last:!pb-[0px]"
+                                >
+                                    <p className="w-full text-[#383838] text-[13px] line-clamp-2 pr-[15px]">
+                                        {notification.title || notification.body || "알림 내용 없음"}
+                                    </p>
+                                    <div className="flex flex-row gap-x-[3px] md:gap-x-[15px] xl:gap-x-[65px]">
+                                        <p className="w-full text-[#777] text-[13px] pr-[5px] min-w-[68px] text-left md:text-center whitespace-nowrap">
+                                            {formatDateTime(notification.createdAt)}
+                                        </p>
+                                    </div>
+                                </Link>
+                            ))
+                        )}
                     </div>
                 </div>
             </div>

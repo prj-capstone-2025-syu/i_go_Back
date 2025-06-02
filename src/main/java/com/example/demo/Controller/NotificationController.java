@@ -60,7 +60,7 @@ public class NotificationController {
         return ResponseEntity.ok().build();
     }
 
-    @GetMapping("/recent")
+/*    @GetMapping("/recent")
     public ResponseEntity<List<Notification>> getRecentNotifications(
             @AuthenticationPrincipal AppUser appUser,
             @RequestParam(defaultValue = "10") int limit) {
@@ -69,7 +69,7 @@ public class NotificationController {
         Pageable pageable = PageRequest.of(0, limit);
         List<Notification> notifications = notificationRepository.findByUserOrderByCreatedAtDesc(user, pageable);
         return ResponseEntity.ok(notifications);
-    }
+    }*/
 
     @PostMapping("/send")
     public ResponseEntity<String> sendNotification(@RequestParam String token,
