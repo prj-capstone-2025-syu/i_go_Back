@@ -38,7 +38,7 @@ public class SecurityConfig {
         return PasswordEncoderFactories.createDelegatingPasswordEncoder();
     }
 
-    @Value("${frontend.url:http://localhost:3000}")
+    @Value("${frontend.url:https://www.igo.ai.kr}")
     private String frontendUrl;
 
     @Bean
