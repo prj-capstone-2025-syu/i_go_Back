@@ -368,7 +368,7 @@ export default function Home() {
             </form>
 
             {/* 🔍 DEBUG: 현재 상태 표시 */}
-            {process.env.NODE_ENV === 'development' && (
+            {/*{process.env.NODE_ENV === 'development' && (
                 <div className="w-full bg-gray-100 p-4 mb-4 rounded border text-xs">
                   <h3 className="font-bold mb-2">🔍 DEBUG INFO</h3>
                   <p><strong>인증 상태:</strong> {isAuthenticated ? '✅ 인증됨' : '❌ 미인증'}</p>
@@ -379,7 +379,7 @@ export default function Home() {
                   <p><strong>루틴 이름:</strong> {routineName || '없음'}</p>
                 </div>
             )}
-
+*/}
             {/* 진행중인 일정 섹션 */}
             <div
                 data-aos="fade-up"
@@ -764,7 +764,14 @@ export default function Home() {
             </div>
 
             {/* 날씨 */}
-            <div className="flex justify-between items-end w-full mb-[8px] px-[5px]">
+            <div
+                data-aos="fade-up"
+                data-aos-easing="ease-in-out"
+                data-aos-duration="400"
+                data-aos-once="true"
+                data-aos-delay="600" // 애니메이션 딜레이 추가
+                className="flex justify-between items-end w-full mb-[8px] px-[5px]"
+            >
               <p className="text-[#01274F] text-[19px] font-[700] tracking-[-0.4px]">
                 날씨
               </p>
@@ -784,14 +791,18 @@ export default function Home() {
                     xmlns="http://www.w3.org/2000/svg"
                 >
                   <path
-                      d="M11 8.06675V11.0001M11 11.0001V13.9334M11 11.0001H13.9333M11 11.0001L8.06665 11.0001M3.66666 15.5834C3.66665 17.1022 4.89787 18.3334 6.41666 18.3334H15.5833C17.1021 18.3334 18.3333 17.1022 18.3333 15.5834V6.41675C18.3333 4.89797 17.1021 3.66675 15.5833 3.66675H6.41666C4.89788 3.66675 3.66666 4.89797 3.66666 6.41675L3.66666 15.5834Z"
-                      stroke="#01274F"
-                      strokeLinecap="round"
+                      d="M8.90809 16.4423L8.05786 15.592L13.625 10.0248L8.05786 4.45759L8.90809 3.60736L15.3255 10.0248L8.90809 16.4423Z"
+                      fill="#01274F"
                   />
                 </svg>
               </Link>
             </div>
             <iframe
+                data-aos="fade-up"
+                data-aos-easing="ease-in-out"
+                data-aos-duration="400"
+                data-aos-once="true"
+                data-aos-delay="600" // 애니메이션 딜레이 추가
                 src="https://www.kma.go.kr/w/iframe/dfs.do"
                 className="w-full bg-[#fff] px-[10px] rounded-[6px] shadow-[0px_0px_5px_rgba(0,0,0,0.2)] mb-[22px] aspect-[38/93]"
             ></iframe>
