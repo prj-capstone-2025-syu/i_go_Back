@@ -1,10 +1,12 @@
 package com.example.demo.Controller;
 
+import com.example.demo.dto.NotificationDto;
 import com.example.demo.entity.entityInterface.AppUser; // 추가
 import com.example.demo.entity.fcm.Notification;
 import com.example.demo.entity.user.User;
 import com.example.demo.repository.NotificationRepository;
 import com.example.demo.repository.UserRepository;
+import com.example.demo.service.NotificationService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.PageRequest; // 추가
 import org.springframework.data.domain.Pageable; // 추가
@@ -25,6 +27,7 @@ public class NotificationController {
     private final FCMService fcmService;
     private final UserRepository userRepository;
     private final NotificationRepository notificationRepository;
+    private final NotificationService notificationService;
 
     @GetMapping
     public ResponseEntity<List<Notification>> getUserNotifications(@AuthenticationPrincipal AppUser appUser) {
@@ -78,6 +81,19 @@ public class NotificationController {
 
         String response = fcmService.sendMessageToToken(token, title, body, data);
         return ResponseEntity.ok(response);
+    }
+
+    @GetMapping("/recent")
+    public ResponseEntity<List<NotificationDto>> getRecentNotifications(
+            @AuthenticationPrincipal User user, // Spring Security를 통해 인증된 사용자 정보를 가져옵니다.
+            @RequestParam(defaultValue = "7") int limit) { // 기본값을 7로 설정합니다.
+        if (user == null) {
+            // 사용자가 인증되지 않은 경우, 적절한 응답을 반환합니다. (예: 401 Unauthorized)
+            return ResponseEntity.status(401).build();
+        }
+        // NotificationService를 호출하여 사용자의 최근 알림을 가져옵니다.
+        List<NotificationDto> notifications = notificationService.getNotificationsForUser(user.getId(), limit);
+        return ResponseEntity.ok(notifications);
     }
 
 

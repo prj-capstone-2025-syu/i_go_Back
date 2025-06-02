@@ -62,3 +62,9 @@ export const sendFCMTokenToServer = async (token) => {
         throw error;
     }
 };
+
+// 최근 알림 목록 가져오기
+export const getRecentNotifications = async (limit = 7) => {
+    const response = await api.get(`/notifications/recent?limit=${limit}`);
+    return response.data;
+};
