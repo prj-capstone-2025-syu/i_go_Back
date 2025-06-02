@@ -233,7 +233,7 @@ const ChatInterface = () => {
               icon: <GoogleIcon />,
               onClick: () => {
                 alert("Google 로그인 로직을 실행합니다.");
-                const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8080';
+                const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'https://igo.ai.kr';
                 // Google OAuth 인증 URL로 리다이렉트
                 window.location.href = `${BACKEND_URL}/oauth2/authorization/google`;
               },
