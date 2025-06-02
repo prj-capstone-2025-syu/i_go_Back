@@ -73,17 +73,23 @@ export default function EditSchedule() {
           const { date: endDate, time: endTime } = parseDateTime(scheduleData.endTime);
 
           // 폼 데이터 설정
+          const locationValue = scheduleData.location || "";
+          const isOnlineSchedule = locationValue.startsWith("[비대면]");
+          const cleanLocation = isOnlineSchedule
+              ? locationValue.replace("[비대면] ", "").replace("[비대면]", "")
+              : locationValue;
+
           setFormData({
             title: scheduleData.title || "",
             startDate,
             startTime,
             endDate,
             endTime,
-            location: scheduleData.location || "",
+            location: cleanLocation,
             supplies: scheduleData.supplies || "",
             memo: scheduleData.memo || "",
             category: scheduleData.category || "PERSONAL",
-            isOnline: scheduleData.location?.toLowerCase().includes('online') || false
+            isOnline: isOnlineSchedule
           });
 
           // 루틴 ID 설정
@@ -153,7 +159,9 @@ export default function EditSchedule() {
         title: formData.title,
         startTime: startDateTime,
         endTime: endDateTime,
-        location: formData.location,
+        location: formData.isOnline
+            ? (formData.location ? `[비대면] ${formData.location}` : "[비대면]")
+            : formData.location,
         memo: formData.memo,
         supplies: formData.supplies,
         category: formData.category

@@ -121,7 +121,9 @@ export default function CreateSchedule() {
         title: formData.title,
         startTime: startDateTime,
         endTime: endDateTime,
-        location: formData.location,
+        location: formData.isOnline
+            ? (formData.location ? `[비대면] ${formData.location}` : "[비대면]")
+            : formData.location,
         memo: formData.memo,
         supplies: formData.supplies,
         category: formData.category
