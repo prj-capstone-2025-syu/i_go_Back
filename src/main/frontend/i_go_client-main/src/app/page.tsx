@@ -70,6 +70,14 @@ export default function Home() {
     }
   }, [router]);
 
+  // 1초마다 현재 시간 업데이트 (컴포넌트 최상위 레벨로 이동)
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setCurrentTime(new Date());
+    }, 1000); // 1초마다 현재 시간 업데이트
+    return () => clearInterval(timer);
+  }, []);
+
   // FCM 토큰 요청 및 서버 전송 로직
   useEffect(() => {
     if (typeof window !== 'undefined' && 'Notification' in window && isAuthenticated) {
@@ -222,46 +230,6 @@ export default function Home() {
       return;
     }
 
-    // 1초미다 현재 시간 업데이트
-    useEffect(() => {
-      const timer = setInterval(() => {
-        setCurrentTime(new Date());
-      }, 1000); // 1초마다 현재 시간 업데이트
-      return () => clearInterval(timer);
-    }, []);
-
-    // FCM 토큰 요청 및 서버 전송 로직
-    useEffect(() => {
-      if (typeof window !== 'undefined' && 'Notification' in window && isAuthenticated) {
-        const messaging = getMessaging(app);
-
-        const requestPermissionAndToken = async () => {
-          try {
-            const permission = await Notification.requestPermission();
-            if (permission === "granted") {
-              console.log("Notification permission granted.");
-              // VAPID 키는 Firebase 콘솔에서 가져와야 합니다.
-              // 프로젝트 설정 > 클라우드 메시징 > 웹 푸시 인증서 > 웹 구성의 키 쌍
-              const currentToken = await getToken(messaging, {
-                vapidKey: "YOUR_VAPID_KEY_HERE", // 여기에 실제 VAPID 키를 입력하세요.
-              });
-              if (currentToken) {
-                console.log("FCM Token:", currentToken);
-                await sendFCMTokenToServer(currentToken);
-              } else {
-                console.log("No registration token available. Request permission to generate one.");
-              }
-            } else {
-              console.log("Unable to get permission to notify.");
-            }
-          } catch (error) {
-            console.error("An error occurred while retrieving token. ", error);
-          }
-        };
-
-        requestPermissionAndToken();
-      }
-    }, [isAuthenticated]); // isAuthenticated 상태가 true일 때만 실행
 
     // 현재 표시할 일정 (진행 중 > 다가오는 순으로 우선순위)
     const scheduleToUse = inProgressSchedule || nearestSchedule;
