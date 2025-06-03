@@ -154,7 +154,7 @@ export default function Home() {
     }
   }, [upcomingSchedules]);
 
-  // 2. Calculate schedule status when nearestSchedule changes
+
   useEffect(() => {
     if (nearestSchedule) {
       const now = new Date();
