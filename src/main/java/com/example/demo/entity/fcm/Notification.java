@@ -32,6 +32,7 @@ public class Notification {
     private String body;
 
     @Column(nullable = false)
+    @Builder.Default
     private boolean isRead = false;
 
     @CreationTimestamp // 엔티티가 생성될 때 자동으로 현재 시간 저장

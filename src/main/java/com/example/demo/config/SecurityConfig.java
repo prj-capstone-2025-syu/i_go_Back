@@ -38,7 +38,7 @@ public class SecurityConfig {
         return PasswordEncoderFactories.createDelegatingPasswordEncoder();
     }
 
-    @Value("${frontend.url:http://localhost:3000}")
+    @Value("${frontend.url:https://www.igo.ai.kr}")
     private String frontendUrl;
 
     @Bean
@@ -95,7 +95,7 @@ public class SecurityConfig {
                             Cookie cookie = new Cookie("access_token", token);
                             cookie.setPath("/");
                             cookie.setHttpOnly(false);
-                            cookie.setMaxAge(3600);
+                            cookie.setMaxAge(7200);
                             response.addCookie(cookie);
 
                             response.sendRedirect(frontendUrl); // 로그인 성공 시 프론트엔드 루트로 리다이렉트
@@ -112,3 +112,4 @@ public class SecurityConfig {
         return http.build();
     }
 }
+

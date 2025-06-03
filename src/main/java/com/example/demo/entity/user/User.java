@@ -53,24 +53,31 @@ public class User implements AppUser {
 
     // 알림 설정 필드
     @Column(nullable = false, columnDefinition = "BOOLEAN DEFAULT true")
-    private boolean notificationsEnabled = true; // 전체 알림 On/Off
+    @Builder.Default
+    private boolean notificationsEnabled = true;
 
     @Column(nullable = false, columnDefinition = "BOOLEAN DEFAULT true")
-    private boolean notifyTodaySchedule = true; // 오늘 일정 알림
+    @Builder.Default
+    private boolean notifyTodaySchedule = true;
 
     @Column(nullable = false, columnDefinition = "BOOLEAN DEFAULT true")
-    private boolean notifyNextSchedule = true; // 다음 일정 알림
+    @Builder.Default
+    private boolean notifyNextSchedule = true;
 
     @Column(nullable = false, columnDefinition = "BOOLEAN DEFAULT true")
-    private boolean notifyRoutineProgress = true; // 루틴 진행 알림
+    @Builder.Default
+    private boolean notifyRoutineProgress = true;
 
     @Column(nullable = false, columnDefinition = "BOOLEAN DEFAULT true")
-    private boolean notifySupplies = true; // 준비물 알림
+    @Builder.Default
+    private boolean notifySupplies = true;
 
     @Column(nullable = false, columnDefinition = "BOOLEAN DEFAULT true")
-    private boolean notifyUnexpectedEvent = true; // 돌발 상황 알림
+    @Builder.Default
+    private boolean notifyUnexpectedEvent = true;
 
     @Column(nullable = false, columnDefinition = "BOOLEAN DEFAULT true")
+    @Builder.Default
     private boolean notifyAiFeature = true; // AI 기능 관련 알림 (예: 읽어주기)
 
     @Override
