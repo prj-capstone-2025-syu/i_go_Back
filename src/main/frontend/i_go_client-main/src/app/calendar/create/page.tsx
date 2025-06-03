@@ -122,7 +122,7 @@ export default function CreateSchedule() {
         startTime: startDateTime,
         endTime: endDateTime,
         location: formData.isOnline
-            ? (formData.location ? `[비대면] ${formData.location}` : "[비대면]")
+            ? "비대면"
             : formData.location,
         memo: formData.memo,
         supplies: formData.supplies,
@@ -244,10 +244,11 @@ export default function CreateSchedule() {
                       <input
                           type="text"
                           name="location"
-                          value={formData.location}
+                          value={formData.isOnline ? "" : formData.location}
                           onChange={handleInputChange}
-                          placeholder="일정 장소를 입력해주세요."
-                          className="text-[13px] text-[#383838] font-[400] tracking-[-0.4px] w-full border-[1px] border-[#DFDFDF] py-[8px] px-[15px] rounded-[4px] focus:border-[#383838] outline-none"
+                          placeholder={formData.isOnline ? "비대면 일정입니다" : "일정 장소를 입력해주세요."}
+                          disabled={formData.isOnline}
+                          className={`text-[13px] text-[#383838] font-[400] tracking-[-0.4px] w-full border-[1px] border-[#DFDFDF] py-[8px] px-[15px] rounded-[4px] focus:border-[#383838] outline-none ${formData.isOnline ? 'bg-gray-100 cursor-not-allowed' : ''}`}
                       />
                     </div>
 
@@ -386,3 +387,4 @@ export default function CreateSchedule() {
       </div>
   );
 }
+
