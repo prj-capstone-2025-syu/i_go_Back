@@ -38,6 +38,7 @@ public class SecurityConfig {
         return PasswordEncoderFactories.createDelegatingPasswordEncoder();
     }
 
+    //하드코딩
     @Value("http://localhost:8080")
     private String frontendUrl;
 
