@@ -2,7 +2,7 @@ package com.example.demo.service;
 
 import com.example.demo.entity.user.User;
 import com.example.demo.entity.user.UserStatus;
-import com.example.demo.repository.UserRepository;
+import com.example.demo.repository.*;
 import com.example.demo.dto.NotificationSettingsDto;
 import jakarta.persistence.EntityNotFoundException;
 import lombok.RequiredArgsConstructor;
@@ -16,6 +16,10 @@ import java.time.LocalDateTime;
 public class UserService {
 
     private final UserRepository userRepository;
+    private final ScheduleRepository scheduleRepository;
+    private final RoutineRepository routineRepository;
+    private final RoutineItemRepository routineItemRepository;
+    private final NotificationRepository notificationRepository;
 
     @Transactional(readOnly = true)
     public String getUserNickname(Long userId) {
@@ -56,12 +60,40 @@ public class UserService {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new IllegalArgumentException("사용자를 찾을 수 없습니다. ID: " + userId));
 
-        // 실제 데이터 삭제 대신 상태 변경 (Soft Delete)
+        // 사용자 관련 데이터 삭제
+        // 1. 사용자의 모든 알림 삭제
+        notificationRepository.deleteAllByUserId(userId);
+
+        // 2. 사용자의 루틴 항목 삭제
+        routineItemRepository.deleteAllByUserId(userId);
+
+        // 3. 사용자의 루틴 삭제
+        routineRepository.deleteAllByUserId(userId);
+
+        // 4. 사용자의 일정 삭제
+        scheduleRepository.deleteAllByUserId(userId);
+
+        // 5. 사용자 정보 마스킹 (소프트 삭제)
         user.setStatus(UserStatus.DELETED);
-        // 필요에 따라 개인정보를 마스킹하거나 null 처리할 수 있습니다.
-        // user.setEmail("deleted_user_" + user.getId() + "@example.com"); // 예시
-        // user.setNickname("탈퇴한사용자");
-        // user.setOauthId(null); // 재가입을 허용하려면 oauthId도 null 처리 또는 다른 값으로 변경
+
+        // 개인정보 마스킹 처리
+        user.setEmail("deleted_user_" + userId);
+        user.setNickname("탈퇴한사용자");
+        user.setProfileImageUrl(null);
+        user.setOauthId(null); // OAuth ID 제거하여 재가입 가능하도록 함
+
+        // FCM 토큰 제거하여 푸시 알림 수신 중단
+        user.setFcmToken(null);
+
+        // 모든 알림 설정 비활성화
+        user.setNotificationsEnabled(false);
+        user.setNotifyTodaySchedule(false);
+        user.setNotifyNextSchedule(false);
+        user.setNotifyRoutineProgress(false);
+        user.setNotifySupplies(false);
+        user.setNotifyUnexpectedEvent(false);
+        user.setNotifyAiFeature(false);
+
         userRepository.save(user);
     }
 
@@ -117,3 +149,4 @@ public class UserService {
         userRepository.save(user);
     }
 }
+

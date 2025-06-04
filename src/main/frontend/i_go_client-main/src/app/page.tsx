@@ -1,4 +1,4 @@
-"use client"; // 상태(useState)와 라우터(useRouter)를 사용하므로 클라이언트 컴포넌트로 명시합니다.
+"use client"; // 상태(useState)와 라우터(useRouter)를 사용하므로 클라이언트 컴포넌트로 명시
 import React, { useState, useEffect } from "react";
 import AOS from "aos";
 import "aos/dist/aos.css";
@@ -9,7 +9,7 @@ import { format } from "date-fns";
 import { getUpcomingSchedules, getLatestInProgressSchedule } from "@/api/scheduleApi";
 import { getRoutineById } from "@/api/routineApi"; // 루틴 정보를 가져오기 위한 API 함수
 import { sendFCMTokenToServer } from "@/api/userApi"; // FCM 토큰 전송 함수 임포트
-import { getMessaging, getToken } from "firebase/messaging"; // Firebase 메시징 임포트
+import { getMessaging, getToken, onMessage } from "firebase/messaging"; // Firebase 메시징 임포트
 import { app } from "@/utils/firebase"; // Firebase 앱 임포트
 
 // 타입 정의
@@ -97,6 +97,13 @@ export default function Home() {
               console.log("FCM Token:", currentToken);
               await sendFCMTokenToServer(currentToken);
               console.log("FCM token sent to server.");
+
+              // 포그라운드 메시지 핸들러는 등록하지만 알림은 표시하지 않음
+              onMessage(messaging, (payload) => {
+                // 포그라운드 메시지 수신 시 콘솔에만 기록하고 알림 표시는 하지 않음
+                console.log("Foreground message received:", payload);
+                // 백그라운드에서만 알림이 표시되도록 함
+              });
             } else {
               console.log("No registration token available. Request permission to generate one.");
             }
@@ -811,3 +818,6 @@ export default function Home() {
       </div>
   );
 }
+
+
+
