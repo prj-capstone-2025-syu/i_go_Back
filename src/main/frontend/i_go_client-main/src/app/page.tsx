@@ -39,256 +39,182 @@ interface RoutineItem {
 }
 
 export default function Home() {
-  const [keyword, setKeyword] = useState("");
+  // --- 상태 선언 ---
+  const [isAuthenticated, setIsAuthenticated] = useState(false); // 초기값은 false로 설정
+  const [isAuthCheckComplete, setIsAuthCheckComplete] = useState(false); // 인증 확인 완료 여부 상태
   const router = useRouter();
 
-// 중복 선언 제거 후 깔끔하게 정리
+  const [keyword, setKeyword] = useState("");
   const [upcomingSchedules, setUpcomingSchedules] = useState<ScheduleType[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [isLoading, setIsLoading] = useState(true); // 데이터 로딩 상태
   const [nearestSchedule, setNearestSchedule] = useState<ScheduleType | null>(null);
   const [inProgressSchedule, setInProgressSchedule] = useState<ScheduleType | null>(null);
   const [scheduleStatusInfo, setScheduleStatusInfo] = useState<{ text: string; color: string; fontWeight?: string } | null>(null);
   const [routineName, setRoutineName] = useState<string | null>(null);
   const [currentRoutineDetails, setCurrentRoutineDetails] = useState<RoutineInfo | null>(null);
-  const scheduleToUse = inProgressSchedule || nearestSchedule;
   const [currentTime, setCurrentTime] = useState(new Date());
 
-  // 페이지 로드시 토큰 확인
-  useEffect(() => {
-    // 쿠키에서 토큰 확인
-    const hasToken = document.cookie.includes('access_token');
+  // --- useEffect Hooks ---
 
+  // 1. 인증 상태 확인 및 리디렉션 로직
+  useEffect(() => {
+    const hasToken = document.cookie.includes('access_token');
     setIsAuthenticated(hasToken);
 
     if (!hasToken) {
-      // 토큰이 없으면 /greeting 페이지로 리다이렉트
       if (window.location.pathname !== "/greeting") {
         localStorage.setItem("redirectPath", window.location.pathname + window.location.search);
+        router.push('/greeting');
       }
-      router.push('/greeting');
     }
+    setIsAuthCheckComplete(true); // 인증 확인 절차 완료
   }, [router]);
 
-  // 1초마다 현재 시간 업데이트 (컴포넌트 최상위 레벨로 이동)
+  // 2. 1초마다 현재 시간 업데이트
   useEffect(() => {
     const timer = setInterval(() => {
       setCurrentTime(new Date());
-    }, 1000); // 1초마다 현재 시간 업데이트
+    }, 1000);
     return () => clearInterval(timer);
   }, []);
 
-  // FCM 토큰 요청 및 서버 전송 로직
+  // 3. FCM 토큰 요청 및 서버 전송 (인증된 경우에만)
   useEffect(() => {
-    if (typeof window !== 'undefined' && 'Notification' in window && isAuthenticated) {
+    if (isAuthenticated && typeof window !== 'undefined' && 'Notification' in window) {
       const messaging = getMessaging(app);
-
       const requestPermissionAndToken = async () => {
         try {
           const permission = await Notification.requestPermission();
           if (permission === "granted") {
-            console.log("Notification permission granted.");
-            // Firebase 콘솔에서 가져온 VAPID 키를 사용해야 합니다.
-            // 프로젝트 설정 > 클라우드 메시징 > 웹 푸시 인증서 > 웹 구성의 키 쌍
             const currentToken = await getToken(messaging, {
-              vapidKey: "BK6gC7kpp7i9gv1WMQuWsW_487xmyfsXWtE0DERzOUunoCWN3fzoJ0JwP3BIL_d4pYGcjlGxhjjmD59-0UGzoug", // 여기에 실제 VAPID 키를 입력하세요.
+              vapidKey: "BK6gC7kpp7i9gv1WMQuWsW_487xmyfsXWtE0DERzOUunoCWN3fzoJ0JwP3BIL_d4pYGcjlGxhjjmD59-0UGzoug",
             });
             if (currentToken) {
-              console.log("FCM Token:", currentToken);
               await sendFCMTokenToServer(currentToken);
-              console.log("FCM token sent to server.");
-            } else {
-              console.log("No registration token available. Request permission to generate one.");
+              onMessage(messaging, (payload) => {
+                console.log("Foreground message received:", payload);
+              });
             }
-          } else {
-            console.log("Unable to get permission to notify.");
           }
         } catch (error) {
-          console.error("An error occurred while retrieving token. ", error);
+          console.error("An error occurred while retrieving FCM token. ", error);
         }
       };
-
       requestPermissionAndToken();
     }
-  }, [isAuthenticated]); // isAuthenticated 상태가 true일 때만 실행
+  }, [isAuthenticated]);
 
+  // 4. AOS 초기화
   useEffect(() => {
     AOS.init();
   }, []);
 
-  // 다가오는 일정 데이터 로드 - 인증 확인 후에만 실행
+  // 5. 일정 데이터 로딩 (getUpcomingSchedules, getLatestInProgressSchedule) (인증된 경우에만)
   useEffect(() => {
     if (isAuthenticated) {
-      const fetchSchedules = async () => {
-        setIsLoading(true);
-        try {
-          const data: ScheduleType[] = await getUpcomingSchedules();
-
-          // API 응답이 이미 정렬되어 있지 않다면 startTime 기준으로 정렬
-          const sortedSchedules = data.sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime());
-
-          setUpcomingSchedules(sortedSchedules);
-        } catch (err: any) { // error 타입을 any로 명시
-
-          if (err.isAxiosError && err.response?.status === 401) { // Axios 에러인 경우
-            router.push("/greeting");
-          }
-        } finally {
-          setIsLoading(false);
-        }
-      };
-      fetchSchedules();
-    } else {
-      setUpcomingSchedules([]); // 인증되지 않으면 빈 배열로 설정
-      setIsLoading(false);
-    }
-  }, [isAuthenticated, router]); // isAuthenticated 상태가 변경될 때만 실행
-
-  // 1. Set nearest schedule from upcomingSchedules
-  useEffect(() => {
-    if (upcomingSchedules.length > 0) {
-      const nearest = upcomingSchedules[0];
-      setNearestSchedule(nearest);
-    } else {
-      setNearestSchedule(null);
-    }
-  }, [upcomingSchedules]);
-
-  // 2. Calculate schedule status when nearestSchedule changes
-  useEffect(() => {
-    if (nearestSchedule) {
-      const now = new Date();
-      const startTime = new Date(nearestSchedule.startTime);
-      const diffMinutes = (startTime.getTime() - now.getTime()) / (1000 * 60);
-
-      if (diffMinutes < 0) {
-        setScheduleStatusInfo({ text: "헉! 지각입니다!!", color: "#ff2f01" }); // 빨간색
-      } else if (diffMinutes <= 5) {
-        setScheduleStatusInfo({ text: "곧 시작!", color: "#10B981", fontWeight: "700" }); // 녹색, 굵게
-      } else if (diffMinutes <= 60) {
-        setScheduleStatusInfo({ text: `약 ${Math.round(diffMinutes)}분 후`, color: "#0080FF" }); // 파란색
-      } else {
-        setScheduleStatusInfo({ text: `${format(startTime, "HH:mm")} 시작`, color: "#383838" }); // 기본 색상 (회색 계열)
-      }
-    } else {
-      setScheduleStatusInfo(null);
-    }
-  }, [nearestSchedule]);
-
-  // 3. Fetch routine name when nearestSchedule (and its routineId) changes
-  useEffect(() => {
-    if (nearestSchedule && nearestSchedule.routineId) {
-      const fetchRoutineName = async () => {
-        try {
-          const routineData: RoutineInfo = await getRoutineById(nearestSchedule.routineId);
-          setRoutineName(routineData.name);
-        } catch (error: any) {
-          setRoutineName(null);
-        }
-      };
-      fetchRoutineName();
-    } else {
-      setRoutineName(null);
-    }
-  }, [nearestSchedule]);
-
-  // 일정 데이터 로딩
-  useEffect(() => {
-    if (isAuthenticated) {
-      setIsLoading(true);
-
-      // 두 API를 병렬로 호출하여 데이터 로딩 최적화
+      setIsLoading(true); // 데이터 로딩 시작
       Promise.all([
-        getUpcomingSchedules(3),
+        getUpcomingSchedules(3), // API 호출 시 limit 파라미터가 있다면 사용
         getLatestInProgressSchedule()
       ])
           .then(([upcomingData, inProgressData]) => {
             setUpcomingSchedules(upcomingData || []);
             setInProgressSchedule(inProgressData); // null 또는 Schedule 객체
-            setIsLoading(false);
           })
           .catch(error => {
-            setIsLoading(false);
+            console.error("Error fetching schedules:", error);
+            if (error.isAxiosError && error.response?.status === 401) {
+              router.push("/greeting");
+            }
+            // 에러 발생 시 상태 초기화
+            setUpcomingSchedules([]);
+            setInProgressSchedule(null);
+          })
+          .finally(() => {
+            setIsLoading(false); // 데이터 로딩 완료 (성공 또는 실패 시 모두)
           });
-    }
-  }, [isAuthenticated]);
-
-  // 가장 가까운 일정 설정
-  useEffect(() => {
-    if (upcomingSchedules && upcomingSchedules.length > 0) {
-      setNearestSchedule(upcomingSchedules[0]);
     } else {
+      // 인증되지 않은 경우, 모든 관련 상태를 초기화하고 로딩 상태를 false로 설정
+      setUpcomingSchedules([]);
+      setInProgressSchedule(null);
+      setNearestSchedule(null);
+      setRoutineName(null);
+      setCurrentRoutineDetails(null);
+      setScheduleStatusInfo(null);
+      setIsLoading(false);
+    }
+  }, [isAuthenticated, router]); // isAuthenticated 변경 시 재실행
+
+
+  // 6. 가장 가까운 일정 설정 (upcomingSchedules 기반)
+  useEffect(() => {
+    if (isAuthenticated && upcomingSchedules && upcomingSchedules.length > 0) {
+      // 진행 중인 일정이 없다면, 다가오는 일정 중 첫 번째를 nearestSchedule로 설정
+      if (!inProgressSchedule) {
+        setNearestSchedule(upcomingSchedules[0]);
+      } else {
+        // 진행 중인 일정이 있다면, nearestSchedule을 null로 설정하거나 다른 로직 적용 가능
+        setNearestSchedule(null);
+      }
+    } else if (isAuthenticated && !inProgressSchedule) { // upcomingSchedules가 비어있고 진행중인 일정도 없을 때
       setNearestSchedule(null);
     }
-  }, [upcomingSchedules]);
+    // 인증되지 않았을 때는 이미 위에서 처리됨
+  }, [upcomingSchedules, isAuthenticated, inProgressSchedule]);
 
-  // 일정 상태 정보 계산
+
+  // 7. 일정 상태 정보 계산 (진행 중 또는 가장 가까운 일정 기반)
   useEffect(() => {
-    // 진행 중인 일정이나 다가오는 일정이 없으면 정보 없음
-    if (!nearestSchedule && !inProgressSchedule) {
+    if (!isAuthenticated) {
       setScheduleStatusInfo(null);
       return;
     }
 
+    const scheduleToDisplay = inProgressSchedule || nearestSchedule;
 
-    // 현재 표시할 일정 (진행 중 > 다가오는 순으로 우선순위)
-    const scheduleToUse = inProgressSchedule || nearestSchedule;
-    const now = new Date();
-    const startTime = new Date(scheduleToUse!.startTime);
+    if (!scheduleToDisplay) {
+      setScheduleStatusInfo(null);
+      return;
+    }
 
-    // 상태 메시지 설정
-    if (scheduleToUse === inProgressSchedule) {
-      // 진행 중인 일정 표시
-      setScheduleStatusInfo({
-        text: "진행 중",
-        color: "#FF6A00",
-        fontWeight: "bold"
-      });
+    const now = currentTime; // 1초마다 업데이트되는 currentTime 사용
+    const startTime = new Date(scheduleToDisplay.startTime);
+
+    if (scheduleToDisplay === inProgressSchedule) {
+      setScheduleStatusInfo({ text: "진행 중", color: "#FF6A00", fontWeight: "bold" });
     } else {
-      // 다가오는 일정 표시
       const diffMinutes = Math.floor((startTime.getTime() - now.getTime()) / (1000 * 60));
-
       if (diffMinutes < 0) {
-        // 지각
-        setScheduleStatusInfo({
-          text: "헉! 지각입니다!!",
-          color: "#FF3B30",
-          fontWeight: "bold"
-        });
+        setScheduleStatusInfo({ text: "헉! 지각입니다!!", color: "#FF3B30", fontWeight: "bold" });
       } else if (diffMinutes < 5) {
-        // 곧 시작
-        setScheduleStatusInfo({
-          text: "곧 시작!",
-          color: "#FF6A00",
-          fontWeight: "bold"
-        });
+        setScheduleStatusInfo({ text: "곧 시작!", color: "#FF6A00", fontWeight: "bold" });
       } else if (diffMinutes < 60) {
-        // x분 후
-        setScheduleStatusInfo({
-          text: `${diffMinutes}분 후`,
-          color: "#007AFF"
-        });
+        setScheduleStatusInfo({ text: `${diffMinutes}분 후`, color: "#007AFF" });
       } else {
-        // HH:mm 시작
-        setScheduleStatusInfo({
-          text: `${format(startTime, 'HH:mm')} 시작`,
-          color: "#8E8E93"
-        });
+        setScheduleStatusInfo({ text: `${format(startTime, 'HH:mm')} 시작`, color: "#8E8E93" });
       }
     }
-  }, [nearestSchedule, inProgressSchedule]);
+  }, [nearestSchedule, inProgressSchedule, isAuthenticated, currentTime]);
 
-  // 루틴 이름 로드
+
+  // 8. 루틴 이름 및 상세 정보 로드 (진행 중 또는 가장 가까운 일정 기반)
   useEffect(() => {
-    const scheduleToUse = inProgressSchedule || nearestSchedule; // scheduleToUse를 useEffect 내부에서 정의
+    if (!isAuthenticated) {
+      setRoutineName(null);
+      setCurrentRoutineDetails(null);
+      return;
+    }
 
-    if (scheduleToUse && scheduleToUse.routineId) {
-      getRoutineById(scheduleToUse.routineId)
-          .then((data: RoutineInfo) => { // API 응답 타입을 RoutineInfo로 명시
-            setRoutineName(data.name); // 기존 루틴 이름 설정 유지
-            setCurrentRoutineDetails(data); // 루틴 상세 정보 설정
+    const scheduleToUseForRoutine = inProgressSchedule || nearestSchedule;
+
+    if (scheduleToUseForRoutine && scheduleToUseForRoutine.routineId) {
+      getRoutineById(scheduleToUseForRoutine.routineId)
+          .then((data: RoutineInfo) => {
+            setRoutineName(data.name);
+            setCurrentRoutineDetails(data);
           })
           .catch(error => {
+            console.error("Error fetching routine details:", error);
             setRoutineName(null);
             setCurrentRoutineDetails(null);
           });
@@ -296,37 +222,24 @@ export default function Home() {
       setRoutineName(null);
       setCurrentRoutineDetails(null);
     }
-  }, [inProgressSchedule, nearestSchedule]); // 의존성 배열은 기존과 동일하게 유지
+  }, [inProgressSchedule, nearestSchedule, isAuthenticated]);
 
-  useEffect(() => {
-    // 1분마다 현재 시간을 업데이트
-    const timerId = setInterval(() => {
-      setCurrentTime(new Date());
-    }, 60000); // 60000ms = 1분
 
-    // 컴포넌트가 언마운트될 때 인터벌을 정리합니다.
-    return () => clearInterval(timerId);
-  }, []);
+  // --- 인증된 사용자를 위한 실제 페이지 렌더링 ---
+  const scheduleToUse = inProgressSchedule || nearestSchedule; // 최종적으로 사용할 일정
 
-  // 날짜 포맷팅 함수 - 타입 명시 추가
   const formatDateTime = (dateTimeString: string) => {
     try {
-      const date = new Date(dateTimeString);
-      const formatted = format(date, "yyyy-MM-dd HH:mm");
-      return formatted;
+      return format(new Date(dateTimeString), "yyyy-MM-dd HH:mm");
     } catch (error) {
       return "날짜 정보 없음";
     }
   };
 
   const handleSearchSubmit = (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault(); // 기본 폼 제출 동작 방지
-
+    event.preventDefault();
     if (keyword.trim()) {
-      const encodedKeyword = encodeURIComponent(keyword.trim());
-      const chatUrl = `/chat?keyword=${encodedKeyword}`;
-      // /chat 페이지로 이동하면서 keyword를 쿼리 파라미터로 전달
-      router.push(chatUrl);
+      router.push(`/chat?keyword=${encodeURIComponent(keyword.trim())}`);
     }
   };
 
