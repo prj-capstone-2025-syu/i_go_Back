@@ -3,6 +3,7 @@ import NavBar from "@/components/common/topNav";
 import React, { useState, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { getRoutineById, updateRoutine, deleteRoutine } from "@/api/routineApi";
+import ConfirmPopup from "@/components/common/ConfirmPopup";
 
 // 루틴 항목 인터페이스 정의
 interface RoutineItem {
@@ -21,6 +22,7 @@ export default function RoutineDetailPage() {
   const [routineItems, setRoutineItems] = useState<RoutineItem[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
+  const [isDeletePopupOpen, setIsDeletePopupOpen] = useState<boolean>(false);
 
   // 루틴 데이터 불러오기
   useEffect(() => {
@@ -122,17 +124,20 @@ export default function RoutineDetailPage() {
       return;
     }
 
-    if (!confirm("정말 이 루틴을 삭제하시겠습니까?")) {
-      return;
-    }
+    setIsDeletePopupOpen(true);
+  };
 
+  // 루틴 삭제 확인
+  const confirmDelete = async () => {
     try {
-      await deleteRoutine(routineId);
+      await deleteRoutine(routineId!);
       alert("루틴이 삭제되었습니다.");
       router.push("/mypage/routine");
     } catch (err) {
       console.error("루틴 삭제 실패:", err);
       alert("루틴 삭제에 실패했습니다.");
+    } finally {
+      setIsDeletePopupOpen(false);
     }
   };
 
@@ -277,6 +282,13 @@ export default function RoutineDetailPage() {
             </form>
           </div>
         </div>
+
+        <ConfirmPopup
+          isOpen={isDeletePopupOpen}
+          message={`루틴 '${title}'을 삭제하시겠습니까?`}
+          onConfirm={confirmDelete}
+          onCancel={() => setIsDeletePopupOpen(false)}
+        />
       </div>
   );
 }

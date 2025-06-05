@@ -2,20 +2,25 @@ package com.example.demo.service;
 
 import com.example.demo.entity.user.User;
 import com.example.demo.entity.user.UserStatus;
-import com.example.demo.repository.UserRepository;
+import com.example.demo.repository.*;
 import com.example.demo.dto.NotificationSettingsDto;
 import jakarta.persistence.EntityNotFoundException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.time.LocalDateTime;
+import java.util.UUID;
 
 @Service
 @RequiredArgsConstructor
 public class UserService {
 
     private final UserRepository userRepository;
+    private final ScheduleRepository scheduleRepository;
+    private final RoutineRepository routineRepository;
+    private final RoutineItemRepository routineItemRepository;
+    private final NotificationRepository notificationRepository;
+    private final OAuthRevokeService oAuthRevokeService;
 
     @Transactional(readOnly = true)
     public String getUserNickname(Long userId) {
@@ -56,12 +61,56 @@ public class UserService {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new IllegalArgumentException("사용자를 찾을 수 없습니다. ID: " + userId));
 
-        // 실제 데이터 삭제 대신 상태 변경 (Soft Delete)
+        // 구글 OAuth 토큰 취소 (연결 해제)
+        if (user.getGoogleAccessToken() != null && !user.getGoogleAccessToken().isEmpty()) {
+            oAuthRevokeService.revokeGoogleToken(user.getGoogleAccessToken());
+        }
+
+        // 사용자 관련 데이터 삭제
+        // 1. 사용자의 모든 알림 삭제
+        notificationRepository.deleteAllByUserId(userId);
+
+        // 2. 사용자의 루틴 항목 삭제
+        routineItemRepository.deleteAllByUserId(userId);
+
+        // 3. 사용자의 루틴 삭제
+        routineRepository.deleteAllByUserId(userId);
+
+        // 4. 사용자의 일정 삭제
+        scheduleRepository.deleteAllByUserId(userId);
+
+        // 5. 사용자 정보 마스킹 (소프트 삭제)
         user.setStatus(UserStatus.DELETED);
-        // 필요에 따라 개인정보를 마스킹하거나 null 처리할 수 있습니다.
-        // user.setEmail("deleted_user_" + user.getId() + "@example.com"); // 예시
-        // user.setNickname("탈퇴한사용자");
-        // user.setOauthId(null); // 재가입을 허용하려면 oauthId도 null 처리 또는 다른 값으로 변경
+
+        // 개인정보 마스킹 처리
+        // UUID를 사용하여 고유한 값으로 이메일 마스킹 (not null 제약조건 위반 방지)
+        String uniqueDeletedEmail = "deleted_" + UUID.randomUUID().toString().substring(0, 8) + "_" + userId;
+        user.setEmail(uniqueDeletedEmail);
+        user.setNickname("탈퇴한사용자");
+
+        // 프로필 이미지 URL이 null이 될 수 없는 경우 빈 문자열로 설정
+        user.setProfileImageUrl("");
+
+        // OAuth 관련 정보 초기화 - oauthId는 nullable=false 속성 때문에 삭제하지 않고 고유값으로 변경
+        String randomOauthId = "deleted_" + UUID.randomUUID().toString();
+        user.setOauthId(randomOauthId);
+
+        user.setGoogleAccessToken(null);
+        user.setGoogleRefreshToken(null);
+        user.setGoogleTokenExpiresAt(null);
+
+        // FCM 토큰 제거하여 푸시 알림 수신 중단
+        user.setFcmToken(null);
+
+        // 모든 알림 설정 비활성화
+        user.setNotificationsEnabled(false);
+        user.setNotifyTodaySchedule(false);
+        user.setNotifyNextSchedule(false);
+        user.setNotifyRoutineProgress(false);
+        user.setNotifySupplies(false);
+        user.setNotifyUnexpectedEvent(false);
+        user.setNotifyAiFeature(false);
+
         userRepository.save(user);
     }
 
