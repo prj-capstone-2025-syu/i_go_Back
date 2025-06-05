@@ -8,8 +8,11 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
+import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestTemplate;
 
 import java.time.LocalDateTime;
@@ -17,6 +20,7 @@ import java.time.format.DateTimeFormatter;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 @Service
 @RequiredArgsConstructor
@@ -27,16 +31,28 @@ public class ChatService {
     @Value("${exaone.api.url}")
     private String exaoneApiUrl;
 
+    // 사용자별 session_id 저장 (실제 서비스에서는 Redis/DB 권장)
+    private final Map<Long, String> sessionMap = new ConcurrentHashMap<>();
+
     public ChatResponse processMessage(ChatRequest request) {
         try {
-            // EXAONE API 호출
-            Map<String, Object> exaoneResponse = callExaoneApi(request.getMessage());
-            
-            // 응답에서 intent와 slot 추출
-            String intent = mapIntent((String) exaoneResponse.get("intent"));
+            String sessionId = getOrCreateSessionId(request.getUserId());
+            Map<String, Object> exaoneResponse = callExaoneApi(request.getMessage(), sessionId, request.getUserId());
+
+            String intentRaw = (String) exaoneResponse.get("intent");
+            String responseText = (String) exaoneResponse.get("response"); // AI의 자연어 답변
             Map<String, Object> slots = (Map<String, Object>) exaoneResponse.get("slots");
 
-            // intent에 따른 처리
+            // intent가 없으면 자연어 답변만 반환
+            if (intentRaw == null) {
+                return ChatResponse.builder()
+                        .message(responseText != null ? responseText : "AI가 답변을 반환하지 않았습니다.")
+                        .success(true)
+                        .build();
+            }
+
+            String intent = mapIntent(intentRaw);
+
             switch (intent) {
                 case "CREATE_SCHEDULE":
                     return handleCreateSchedule(request.getUserId(), slots);
@@ -46,7 +62,7 @@ public class ChatService {
                     return handleDeleteSchedule(request.getUserId(), slots);
                 default:
                     return ChatResponse.builder()
-                            .message("죄송합니다. 이해하지 못했습니다.")
+                            .message(responseText != null ? responseText : "죄송합니다. 이해하지 못했습니다.")
                             .success(false)
                             .build();
             }
@@ -58,15 +74,47 @@ public class ChatService {
         }
     }
 
-    private Map<String, Object> callExaoneApi(String message) {
+    // session_id가 없으면 FastAPI /chat 호출해서 생성
+    private String getOrCreateSessionId(Long userId) {
+        if (sessionMap.containsKey(userId)) {
+            return sessionMap.get(userId);
+        }
+        // FastAPI /chat 호출
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
+        Map<String, Object> body = new HashMap<>();
+        body.put("query", "안녕"); // 아무 메시지나, 세션 생성용
+        body.put("session_id", null);
+        HttpEntity<Map<String, Object>> entity = new HttpEntity<>(body, headers);
+
+        String chatUrl = exaoneApiUrl + "/chat";
+        ResponseEntity<Map> response = restTemplate.postForEntity(chatUrl, entity, Map.class);
+        String sessionId = (String) response.getBody().get("session_id");
+        sessionMap.put(userId, sessionId);
+        return sessionId;
+    }
+
+    private Map<String, Object> callExaoneApi(String message, String sessionId, Long userId) {
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON);
 
-        Map<String, String> requestBody = new HashMap<>();
+        Map<String, Object> requestBody = new HashMap<>();
         requestBody.put("query", message);
+        requestBody.put("session_id", sessionId);
 
-        HttpEntity<Map<String, String>> request = new HttpEntity<>(requestBody, headers);
-        return restTemplate.postForObject(exaoneApiUrl, request, Map.class);
+        HttpEntity<Map<String, Object>> entity = new HttpEntity<>(requestBody, headers);
+        String parseUrl = exaoneApiUrl + "/parse";
+        try {
+            ResponseEntity<Map> response = restTemplate.postForEntity(parseUrl, entity, Map.class);
+            return response.getBody();
+        } catch (HttpClientErrorException e) {
+            if (e.getStatusCode() == HttpStatus.BAD_REQUEST) {
+                sessionMap.remove(userId);
+                String newSessionId = getOrCreateSessionId(userId);
+                return callExaoneApi(message, newSessionId, userId);
+            }
+            throw e;
+        }
     }
 
     private ChatResponse handleCreateSchedule(Long userId, Map<String, Object> slots) {

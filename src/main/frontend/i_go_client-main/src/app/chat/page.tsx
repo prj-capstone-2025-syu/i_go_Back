@@ -3,7 +3,10 @@
 import React, { useState, useEffect, useRef, Suspense } from "react";
 import { useSearchParams } from "next/navigation"; // App Router에서 URL 파라미터를 읽기 위함
 import NavBarMain from "@/components/common/topNavMain"; // 필요하다면 NavBarMain을 여기에 추가
-import { sendChatMessage } from "@/api/chatApi"; // 실제 경로에 맞게 수정
+import { sendChatMessage, handleAIFunction } from "@/api/chatApi"; // sendChatMessage를 sendMessage로 변경
+import { format } from "date-fns";
+import { ko } from "date-fns/locale";
+import { createSchedule, getSchedules } from "@/api/scheduleApi";
 
 // --- 아이콘 컴포넌트 정의 ---
 interface IconProps extends React.SVGProps<SVGSVGElement> {}
@@ -650,8 +653,38 @@ const ChatInterface = ({
     setInputValue("");
     setLoading(true);
     try {
-      const data = await sendChatMessage(message);
-      addMessage(data.message, aiPartner, false, 'ai', data.data);
+      const sessionId = "1";
+      const aiResponse = await sendChatMessage(message, sessionId);
+
+      // 1. function_call이 객체로 오면 정상 처리
+      if (aiResponse.function_call) {
+        const result = await handleAIFunction(aiResponse.function_call);
+        addMessage(result.message, aiPartner, false, 'ai', result.data);
+      } else {
+        // 2. function_call이 텍스트(마크다운 등)로 오면 파싱 시도
+        let aiMsg = aiResponse.response || aiResponse.message;
+        if (typeof aiMsg === "string") {
+          // 마크다운/기호 제거 및 JSON 파싱 시도
+          const jsonMatch = aiMsg.match(/```json([\s\S]*?)```/);
+          if (jsonMatch) {
+            try {
+              const jsonStr = jsonMatch[1].replace(/^\s*\|]\s*/, '').trim();
+              const parsed = JSON.parse(jsonStr);
+              if (parsed.function_call) {
+                const result = await handleAIFunction(parsed.function_call);
+                addMessage(result.message, aiPartner, false, 'ai', result.data);
+                setLoading(false);
+                return;
+              }
+            } catch (e) {
+              // 파싱 실패시 무시
+            }
+          }
+          // |] 등 이상한 기호 제거
+          aiMsg = aiMsg.replace(/^\s*\|]\s*/, '').replace(/```json|```/g, '').trim();
+        }
+        addMessage(aiMsg, aiPartner, false, 'ai');
+      }
     } catch (e) {
       addMessage("오류가 발생했습니다.", aiPartner, false, 'ai');
     }

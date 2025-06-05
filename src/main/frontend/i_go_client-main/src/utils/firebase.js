@@ -1,6 +1,6 @@
 // Import the functions you need from the SDKs you need
 import { initializeApp } from "firebase/app";
-import { getAnalytics } from "firebase/analytics";
+import { getMessaging, getToken } from 'firebase/messaging';
 // TODO: Add SDKs for Firebase products that you want to use
 // https://firebase.google.com/docs/web/setup#available-libraries
 
@@ -16,8 +16,17 @@ const firebaseConfig = {
     measurementId: "G-GBQRRJX8HP"
 };
 
-// Initialize Firebase
+// Firebase 초기화
 const app = initializeApp(firebaseConfig);
-// const analytics = getAnalytics(app); // 필요하다면 주석 해제
 
-export { app }; // 초기화된 app 객체를 내보냅니다.
+// Firebase Cloud Messaging 초기화 (브라우저 환경에서만)
+let messaging = null;
+if (typeof window !== 'undefined') {
+    try {
+        messaging = getMessaging(app);
+    } catch (error) {
+        console.error('Firebase Messaging 초기화 실패:', error);
+    }
+}
+
+export { app, messaging };

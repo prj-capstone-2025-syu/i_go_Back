@@ -232,7 +232,8 @@ const ChatInterface = () => {
               text: "Google 계정으로 로그인",
               icon: <GoogleIcon />,
               onClick: () => {
-                const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'https://igo.ai.kr';
+                //const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'https://igo.ai.kr';
+                const BACKEND_URL = 'http://localhost:8080';
                 // Google OAuth 인증 URL로 리다이렉트
                 window.location.href = `${BACKEND_URL}/oauth2/authorization/google`;
               },
@@ -288,7 +289,8 @@ const ChatInterface = () => {
               text: "Google 계정으로 시작하기",
               icon: <GoogleIcon />,
               onClick: () => {
-                const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'https://igo.ai.kr';
+                //const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'https://igo.ai.kr';
+                const BACKEND_URL = 'http://localhost:8080';
                 // Google OAuth 인증 URL로 리다이렉트
                 window.location.href = `${BACKEND_URL}/oauth2/authorization/google`;
               },

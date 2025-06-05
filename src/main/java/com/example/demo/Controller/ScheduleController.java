@@ -111,4 +111,67 @@ public class ScheduleController {
                 .orElseGet(() -> ResponseEntity.ok(null));
     }
 
+    @PostMapping("/ai-function")
+    public ResponseEntity<?> handleAIFunction(
+            @AuthenticationPrincipal AppUser appUser,
+            @RequestBody Map<String, Object> payload) {
+        // function_call 객체 추출
+        Map<String, Object> functionCall = (Map<String, Object>) payload.get("function_call");
+        String functionName = (String) functionCall.get("name");
+        Map<String, Object> args = (Map<String, Object>) functionCall.get("arguments");
+        Long userId = appUser.getId();
+
+        try {
+            switch (functionName) {
+                case "create_schedule":
+                    Schedule created = scheduleService.createScheduleByArgs(userId, args);
+                    if (created == null || created.getId() == null) {
+                        return ResponseEntity.status(500).body("일정 저장에 실패했습니다.");
+                    }
+                    return ResponseEntity.ok(Map.of(
+                        "message", "일정이 성공적으로 등록되었습니다.",
+                        "data", created
+                    ));
+                case "get_schedule":
+                    List<Schedule> found = scheduleService.findSchedulesByArgs(userId, args);
+                    String msg;
+                    if (found.isEmpty()) {
+                        msg = "해당 날짜에 일정이 없습니다.";
+                    } else {
+                        StringBuilder sb = new StringBuilder();
+                        sb.append("조회된 일정 목록입니다:\n");
+                        for (Schedule s : found) {
+                            sb.append("- ").append(s.getTitle());
+                            if (s.getStartTime() != null) {
+                                sb.append(" (").append(s.getStartTime());
+                                if (s.getEndTime() != null) sb.append(" ~ ").append(s.getEndTime());
+                                sb.append(")");
+                            }
+                            if (s.getLocation() != null) sb.append(" @ ").append(s.getLocation());
+                            sb.append("\n");
+                        }
+                        msg = sb.toString();
+                    }
+                    return ResponseEntity.ok(Map.of(
+                        "message", msg,
+                        "data", found
+                    ));
+                case "delete_schedule":
+                    boolean deleted = scheduleService.deleteScheduleByArgs(userId, args);
+                    return ResponseEntity.ok(Map.of("message", deleted ? "일정이 삭제되었습니다." : "일정 삭제에 실패했습니다.", "deleted", deleted));
+                case "update_schedule":
+                    Schedule updated = scheduleService.updateScheduleByArgs(userId, args);
+                    return ResponseEntity.ok(Map.of(
+                        "message", "일정이 성공적으로 수정되었습니다.",
+                        "data", updated
+                    ));
+                default:
+                    return ResponseEntity.badRequest().body("지원하지 않는 function_call");
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+            return ResponseEntity.status(500).body("일정 처리 중 오류: " + e.getMessage());
+        }
+    }
+
 }
