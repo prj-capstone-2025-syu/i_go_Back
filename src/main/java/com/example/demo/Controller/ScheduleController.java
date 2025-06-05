@@ -34,7 +34,12 @@ public class ScheduleController {
                 request.getTitle(),
                 request.getStartTime(),
                 request.getEndTime(),
-                request.getLocation(),
+                request.getStartLocation(), // 출발지 정보
+                request.getStartX(),        // 출발지 X좌표
+                request.getStartY(),        // 출발지 Y좌표
+                request.getLocation(),      // 도착지 정보
+                request.getDestinationX(),  // 도착지 X좌표
+                request.getDestinationY(),  // 도착지 Y좌표
                 request.getMemo(),
                 request.getSupplies(),
                 request.getCategory()
@@ -81,7 +86,12 @@ public class ScheduleController {
                 request.getTitle(),
                 request.getStartTime(),
                 request.getEndTime(),
-                request.getLocation(),
+                request.getStartLocation(), // 출발지 정보
+                request.getStartX(),        // 출발지 X좌표
+                request.getStartY(),        // 출발지 Y좌표
+                request.getLocation(),      // 도착지 정보
+                request.getDestinationX(),  // 도착지 X좌표
+                request.getDestinationY(),  // 도착지 Y좌표
                 request.getMemo(),
                 request.getSupplies(),
                 request.getCategory()

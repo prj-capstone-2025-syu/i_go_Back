@@ -27,7 +27,19 @@ public class Schedule {
 
     private LocalDateTime endTime;
 
+    // 출발지 정보 추가
+    private String startLocation;
+
+    // 출발지 좌표
+    private Double startX;
+    private Double startY;
+
+    // 기존 location은 도착지를 의미
     private String location;
+
+    // 도착지 좌표
+    private Double destinationX;
+    private Double destinationY;
 
     private String memo;
 

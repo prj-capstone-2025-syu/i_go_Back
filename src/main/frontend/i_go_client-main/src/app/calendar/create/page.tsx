@@ -4,6 +4,7 @@ import React, { useState, useEffect } from "react";
 import { createSchedule } from "@/api/scheduleApi";
 import { getRoutineNames } from "@/api/routineApi";
 import { useRouter } from "next/navigation";
+import AddressSearch from "@/components/common/AddressSearch";
 
 interface RoutineName {
   id: number;
@@ -20,11 +21,20 @@ export default function CreateSchedule() {
     startTime: "",
     endDate: "",
     endTime: "",
-    location: "",
+    startLocation: "", // 출발지 추가
+    location: "",      // location은 도착지로 사용
     supplies: "",
     memo: "",
     category: "PERSONAL",
     isOnline: false
+  });
+
+  // 좌표 정보를 저장할 상태 추가
+  const [locationCoords, setLocationCoords] = useState({
+    startX: null as number | null,
+    startY: null as number | null,
+    destinationX: null as number | null,
+    destinationY: null as number | null
   });
   const [loading, setLoading] = useState(false);
 
@@ -76,6 +86,34 @@ export default function CreateSchedule() {
     console.log('루틴 개수:', routines.length);
   }, [routines]);
 
+  // 비대면 체크 시 출발지와 도착지 상태를 초기화하는 효과 추가
+  useEffect(() => {
+    if (formData.isOnline) {
+      // 비대면 체크 시 "비대면"으로 설정
+      setFormData(prev => ({
+        ...prev,
+        startLocation: "비대면",
+        location: "비대면"
+      }));
+      // 좌표 정보도 초기화
+      setLocationCoords({
+        startX: null,
+        startY: null,
+        destinationX: null,
+        destinationY: null
+      });
+    } else {
+      // 비대면 체크 해제 시 값을 비움
+      if (formData.startLocation === "비대면") {
+        setFormData(prev => ({
+          ...prev,
+          startLocation: "",
+          location: ""
+        }));
+      }
+    }
+  }, [formData.isOnline]);
+
   const handleRoutineChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     setSelectedRoutine(e.target.value);
     console.log('선택된 루틴:', e.target.value);
@@ -83,9 +121,19 @@ export default function CreateSchedule() {
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value, type, checked } = e.target;
+
+    // 체크박스 처리는 별도로 함
+    if (type === 'checkbox') {
+      setFormData(prev => ({
+        ...prev,
+        [name]: checked
+      }));
+      return;
+    }
+
     setFormData(prev => ({
       ...prev,
-      [name]: type === 'checkbox' ? checked : value
+      [name]: value
     }));
   };
 
@@ -121,9 +169,12 @@ export default function CreateSchedule() {
         title: formData.title,
         startTime: startDateTime,
         endTime: endDateTime,
-        location: formData.isOnline
-            ? (formData.location ? `[비대면] ${formData.location}` : "[비대면]")
-            : formData.location,
+        startLocation: formData.isOnline ? "비대면" : formData.startLocation,
+        startX: locationCoords.startX,
+        startY: locationCoords.startY,
+        location: formData.isOnline ? "비대면" : formData.location,
+        destinationX: locationCoords.destinationX,
+        destinationY: locationCoords.destinationY,
         memo: formData.memo,
         supplies: formData.supplies,
         category: formData.category
@@ -144,6 +195,7 @@ export default function CreateSchedule() {
         startTime: "",
         endDate: "",
         endTime: "",
+        startLocation: "",
         location: "",
         supplies: "",
         memo: "",
@@ -151,6 +203,12 @@ export default function CreateSchedule() {
         isOnline: false
       });
       setSelectedRoutine("");
+      setLocationCoords({
+        startX: null,
+        startY: null,
+        destinationX: null,
+        destinationY: null
+      });
 
     } catch (error) {
       console.error('일정 등록 실패:', error);
@@ -236,18 +294,53 @@ export default function CreateSchedule() {
                       </div>
                     </div>
 
-                    {/* 장소 */}
+                    {/* 출발지 - AddressSearch 컴포넌트로 교체 */}
+                    <div className="relative">
+                      <p className="text-[#383838] text-[13px] font-[500] tracking-[-0.4px] mb-[7px]">
+                        출발지
+                      </p>
+                      <AddressSearch
+                        name="startLocation"
+                        defaultValue={formData.startLocation}
+                        placeholder="출발지를 입력해주세요."
+                        disabled={formData.isOnline}
+                        className={`text-[13px] text-[#383838] font-[400] tracking-[-0.4px] w-full border-[1px] ${formData.isOnline ? 'bg-gray-100 border-gray-200' : 'border-[#DFDFDF]'} py-[8px] px-[15px] rounded-[4px] focus:border-[#383838] outline-none`}
+                        onAddressSelect={(address, x, y) => {
+                          setFormData(prev => ({
+                            ...prev,
+                            startLocation: address
+                          }));
+                          setLocationCoords(prev => ({
+                            ...prev,
+                            startX: x,
+                            startY: y
+                          }));
+                        }}
+                      />
+                    </div>
+
+                    {/* 도착지(장소) - AddressSearch 컴포넌트로 교체 */}
                     <div className="relative">
                       <p className="text-[#383838] text-[13px] font-[500] tracking-[-0.4px] mb-[7px]">
                         장소
                       </p>
-                      <input
-                          type="text"
-                          name="location"
-                          value={formData.location}
-                          onChange={handleInputChange}
-                          placeholder="일정 장소를 입력해주세요."
-                          className="text-[13px] text-[#383838] font-[400] tracking-[-0.4px] w-full border-[1px] border-[#DFDFDF] py-[8px] px-[15px] rounded-[4px] focus:border-[#383838] outline-none"
+                      <AddressSearch
+                        name="location"
+                        defaultValue={formData.location}
+                        placeholder="일정 장소를 입력해주세요."
+                        disabled={formData.isOnline}
+                        className={`text-[13px] text-[#383838] font-[400] tracking-[-0.4px] w-full border-[1px] ${formData.isOnline ? 'bg-gray-100 border-gray-200' : 'border-[#DFDFDF]'} py-[8px] px-[15px] rounded-[4px] focus:border-[#383838] outline-none`}
+                        onAddressSelect={(address, x, y) => {
+                          setFormData(prev => ({
+                            ...prev,
+                            location: address
+                          }));
+                          setLocationCoords(prev => ({
+                            ...prev,
+                            destinationX: x,
+                            destinationY: y
+                          }));
+                        }}
                       />
                     </div>
 
