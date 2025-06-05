@@ -36,3 +36,4 @@ out/
 ### VS Code ###
 .vscode/
 src/main/resources/application.propertiessrc/main/resources/firebase/*.json
+/mnt/c/Users/seung o/OneDrive/바탕 화면/capstone/i_go_Back/src/main/resources/firebase/*.json
