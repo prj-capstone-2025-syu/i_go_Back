@@ -70,13 +70,6 @@ export default function Home() {
     }
   }, [router]);
 
-  // 1초마다 현재 시간 업데이트 (컴포넌트 최상위 레벨로 이동)
-  useEffect(() => {
-    const timer = setInterval(() => {
-      setCurrentTime(new Date());
-    }, 1000); // 1초마다 현재 시간 업데이트
-    return () => clearInterval(timer);
-  }, []);
 
   // FCM 토큰 요청 및 서버 전송 로직
   useEffect(() => {
@@ -272,7 +265,7 @@ export default function Home() {
       } else if (diffMinutes < 60) {
         // x분 후
         setScheduleStatusInfo({
-          text: `${diffMinutes}분 후`,
+          text: `${diffMinutes}분 후 시작!`,
           color: "#007AFF"
         });
       } else {
