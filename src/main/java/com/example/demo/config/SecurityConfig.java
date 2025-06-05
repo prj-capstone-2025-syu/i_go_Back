@@ -38,6 +38,7 @@ public class SecurityConfig {
         return PasswordEncoderFactories.createDelegatingPasswordEncoder();
     }
 
+    //TODO : 나중에 EC2 옮길떄 바꿀것
     //@Value("${frontend.url:https://www.igo.ai.kr}")
     @Value("${frontend.url:http://localhost:3000}")
     private String frontendUrl;
