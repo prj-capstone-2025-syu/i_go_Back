@@ -24,6 +24,8 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
     const [notificationData, setNotificationData] = useState<any | null>(null);
     const [checkedRoutines, setCheckedRoutines] = useState<string[]>([]);
     const [checkedItems, setCheckedItems] = useState<Set<string>>(new Set());
+    // 토큰 존재 여부 확인을 위한 상태
+    const [hasToken, setHasToken] = useState<boolean>(false);
 
     // 루틴 알림을 위한 상태
     const [routineNotificationOpen, setRoutineNotificationOpen] = useState<boolean>(false);
@@ -34,6 +36,22 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
 
     // 마지막으로 체크한 시간을 저장
     const lastCheckRef = useRef<Date>(new Date());
+
+    // 토큰 체크 로직
+    useEffect(() => {
+        const checkToken = () => {
+            // 로컬 스토리지 또는 쿠키에서 access_token 확인
+            const token = localStorage.getItem('access_token') ||
+                          document.cookie.split('; ').find(row => row.startsWith('access_token='))?.split('=')[1];
+            setHasToken(!!token);
+        };
+
+        checkToken();
+
+        // 스토리지/쿠키 변경 감지를 위한 이벤트 리스너
+        window.addEventListener('storage', checkToken);
+        return () => window.removeEventListener('storage', checkToken);
+    }, []);
 
     const showNotification = (data: any) => {
         setNotificationData(data);
@@ -57,6 +75,12 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
 
     // 루틴 알림 체크 로직
     useEffect(() => {
+        // 토큰이 없으면 알림 체크를 실행하지 않음
+        if (!hasToken) {
+            console.log('토큰이 없어 알림 체크를 건너뜁니다.');
+            return;
+        }
+
         const checkSchedules = async () => {
             try {
                 const inProgressSchedule = await getLatestInProgressSchedule();
@@ -108,8 +132,10 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
         const intervalId = setInterval(checkSchedules, 60000);
         checkSchedules(); // 초기 로드 시 한번 체크
 
+        console.log('토큰이 확인되어 알림 체크를 시작합니다.');
+
         return () => clearInterval(intervalId);
-    }, [checkedItems]);
+    }, [checkedItems, hasToken]); // hasToken 의존성 추가
 
     return (
         <NotificationContext.Provider

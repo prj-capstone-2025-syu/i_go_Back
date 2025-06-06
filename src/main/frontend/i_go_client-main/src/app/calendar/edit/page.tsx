@@ -223,10 +223,22 @@ export default function EditSchedule() {
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value, type, checked } = e.target;
-    setFormData(prev => ({
-      ...prev,
-      [name]: type === 'checkbox' ? checked : value
-    }));
+
+    // 체크박스(isOnline)가 변경되었을 때 location 필드도 함께 업데이트
+    if (name === 'isOnline') {
+      setFormData(prev => ({
+        ...prev,
+        [name]: checked,
+        // 체크박스가 체크되면 location을 '비대면'으로 설정, 아니면 빈 문자열로 초기화
+        location: checked ? '비대면' : ''
+      }));
+    } else {
+      setFormData(prev => ({
+        ...prev,
+        [name]: type === 'checkbox' ? checked : value
+      }));
+    }
+
     handleFieldTouch(name);
   };
 
@@ -272,9 +284,7 @@ export default function EditSchedule() {
         title: formData.title,
         startTime: startDateTime,
         endTime: endDateTime,
-        location: formData.isOnline
-            ? (formData.location ? `[비대면] ${formData.location}` : "[비대면]")
-            : formData.location,
+        location: formData.isOnline ? "비대면" : formData.location,
         memo: formData.memo,
         supplies: formData.supplies,
         category: formData.category
@@ -456,7 +466,8 @@ export default function EditSchedule() {
                           value={formData.location}
                           onChange={handleInputChange}
                           placeholder="일정 장소를 입력해주세요."
-                          className="text-[13px] text-[#383838] font-[400] tracking-[-0.4px] w-full border-[1px] border-[#DFDFDF] py-[8px] px-[15px] rounded-[4px] focus:border-[#383838] outline-none"
+                          disabled={formData.isOnline}
+                          className={`text-[13px] text-[#383838] font-[400] tracking-[-0.4px] w-full border-[1px] border-[#DFDFDF] py-[8px] px-[15px] rounded-[4px] focus:border-[#383838] outline-none ${formData.isOnline ? 'bg-gray-100' : ''}`}
                       />
                     </div>
 
@@ -481,8 +492,8 @@ export default function EditSchedule() {
                                   <option key={routine.id} value={routine.id.toString()}>
                                     {routine.name}
                                   </option>
-                              ))
-                          ) : (
+                              )))
+                          : (
                               <option disabled>
                                 {routines.length === 0 ? "루틴이 없습니다" : "로딩 중..."}
                               </option>
@@ -569,7 +580,19 @@ export default function EditSchedule() {
                             onChange={handleInputChange}
                             className="peer a11y"
                         />
-                        <span className="absolute top-[50%] translate-y-[-50%] left-0 bg-[#fff] peer-checked:bg-[#2155A0] border-[1px] border-[#949494] peer-checked:border-[#2155A0] w-[16px] h-[16px] rounded-[2px]" />
+                        <span className="
+                          absolute top-[50%] translate-y-[-50%] left-0
+                          bg-[#fff] peer-checked:bg-[#2155A0]
+                          border-[1px] border-[#949494] peer-checked:border-[#2155A0]
+                          w-[16px] h-[16px]
+                          peer-checked:after:content-[''] peer-checked:after:absolute
+                          peer-checked:after:left-[50%] peer-checked:after:top-[50%]
+                          peer-checked:after:w-[6px] peer-checked:after:h-[9px]
+                          peer-checked:after:mt-[-6px] peer-checked:after:ml-[-3px]
+                          peer-checked:after:border-r-[2px] peer-checked:after:border-r-[#fff]
+                          peer-checked:after:border-b-[2px] peer-checked:after:border-b-[#fff]
+                          peer-checked:after:rotate-[40deg]"
+                        />
                       </label>
                       <label className="text-[13px] leading-[16px] tracking-[-0.4px] text-[#777]">
                         비대면 일정

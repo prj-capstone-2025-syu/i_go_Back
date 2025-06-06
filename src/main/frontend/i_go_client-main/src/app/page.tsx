@@ -52,13 +52,17 @@ const Home: FC = () => {
   const [scheduleStatusInfo, setScheduleStatusInfo] = useState<{ text: string; color: string; fontWeight?: string } | null>(null);
   const [routineName, setRoutineName] = useState<string | null>(null);
   const [currentRoutineDetails, setCurrentRoutineDetails] = useState<RoutineInfo | null>(null);
-  const scheduleToUse = inProgressSchedule || nearestSchedule;
   const [currentTime, setCurrentTime] = useState(new Date());
   // 스케줄 데이터 준비 상태를 관리하는 새로운 state
   const [scheduleDataReady, setScheduleDataReady] = useState(false);
 
   // 1분마다 자동 리프레시를 위한 상태
   const [refreshToken, setRefreshToken] = useState(0);
+
+  // 현재 표시할 일정을 결정하는 함수 (진행 중인 일정 > 다가오는 일정 순)
+  const getCurrentSchedule = useCallback(() => {
+    return inProgressSchedule || nearestSchedule;
+  }, [inProgressSchedule, nearestSchedule]);
 
   // 페이지 로드시 토큰 확인
   useEffect(() => {
@@ -121,43 +125,6 @@ const Home: FC = () => {
     AOS.init();
   }, []);
 
-  // 다가오는 일정 데이터 로드
-  useEffect(() => {
-    if (isAuthenticated) {
-      const fetchSchedules = async () => {
-        setIsLoading(true);
-        try {
-          const data: ScheduleType[] = await getUpcomingSchedules();
-
-          // API 응답이 이미 정렬되어 있지 않다면 startTime 기준으로 정렬
-          const sortedSchedules = data.sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime());
-
-          setUpcomingSchedules(sortedSchedules);
-        } catch (err: any) {
-          if (err.isAxiosError && err.response?.status === 401) {
-            router.push("/greeting");
-          }
-        } finally {
-          setIsLoading(false);
-        }
-      };
-      fetchSchedules();
-    } else {
-      setUpcomingSchedules([]);
-      setIsLoading(false);
-    }
-  }, [isAuthenticated, router]);
-
-  // 가장 가까운 일정 설정
-  useEffect(() => {
-    if (upcomingSchedules.length > 0) {
-      const nearest = upcomingSchedules[0];
-      setNearestSchedule(nearest);
-    } else {
-      setNearestSchedule(null);
-    }
-  }, [upcomingSchedules]);
-
   // 일정 초기 데이터 로딩
   useEffect(() => {
     if (isAuthenticated) {
@@ -170,8 +137,21 @@ const Home: FC = () => {
         getLatestInProgressSchedule()
       ])
           .then(([upcomingData, inProgressData]) => {
-            setUpcomingSchedules(upcomingData || []);
+            // 다가오는 일정 설정
+            const sortedSchedules = (upcomingData || []).sort((a, b) =>
+                new Date(a.startTime).getTime() - new Date(b.startTime).getTime()
+            );
+            setUpcomingSchedules(sortedSchedules);
+
+            // 가장 가까운 일정 설정 (진행 중인 일정이 아닌 것 중에서)
+            const nearestUpcoming = sortedSchedules.find((schedule: { status: string; startTime: string | number | Date; }) =>
+                schedule.status !== 'IN_PROGRESS' && new Date(schedule.startTime) > new Date()
+            ) || null;
+            setNearestSchedule(nearestUpcoming);
+
+            // 진행 중인 일정 설정
             setInProgressSchedule(inProgressData);
+
             setIsLoading(false);
             // 데이터 로딩이 완료되고, 필요한 정보가 모두 준비되었을 때 준비 상태를 true로 설정
             setTimeout(() => {
@@ -199,19 +179,23 @@ const Home: FC = () => {
       const inProgressData = await getLatestInProgressSchedule();
       setInProgressSchedule(inProgressData);
 
-      // 현재 표시할 일정 (새로 가져온 진행 중 일정 또는 기존 가장 가까운 일정)
-      const currentSchedule = inProgressData || nearestSchedule;
+      // 다가오는 일정도 새로 가져와서 업데이트
+      const upcomingData = await getUpcomingSchedules(3);
+      const sortedSchedules = (upcomingData || []).sort((a, b) =>
+          new Date(a.startTime).getTime() - new Date(b.startTime).getTime()
+      );
+      setUpcomingSchedules(sortedSchedules);
 
-      // 새로운 일정이 있고 루틴 ID가 있으면 루틴 정보 업데이트
-      if (currentSchedule && currentSchedule.routineId) {
-        const routineData = await getRoutineById(currentSchedule.routineId);
-        setRoutineName(routineData.name);
-        setCurrentRoutineDetails(routineData);
-      }
+      // 가장 가까운 일정 재설정 (진행 중인 일정이 아닌 것 중에서)
+      const nearestUpcoming = sortedSchedules.find((schedule: { status: string; startTime: string | number | Date; }) =>
+          schedule.status !== 'IN_PROGRESS' && new Date(schedule.startTime) > new Date()
+      ) || null;
+      setNearestSchedule(nearestUpcoming);
+
     } catch (error) {
       console.error("Error refreshing time and routine info:", error);
     }
-  }, [isAuthenticated, nearestSchedule]);
+  }, [isAuthenticated]);
 
   // 1분마다 시간과 루틴 정보 업데이트
   useEffect(() => {
@@ -237,19 +221,19 @@ const Home: FC = () => {
 
   // 일정 상태 정보 계산
   useEffect(() => {
-    // 진행 중인 일정이나 다가오는 일정이 없으면 정보 없음
-    if (!nearestSchedule && !inProgressSchedule) {
+    const currentSchedule = getCurrentSchedule();
+
+    // 현재 표시할 일정이 없으면 정보 없음
+    if (!currentSchedule) {
       setScheduleStatusInfo(null);
       return;
     }
 
-    // 현재 표시할 일정 (진행 중 > 다가오는 순으로 우선순위)
-    const scheduleToUse = inProgressSchedule || nearestSchedule;
     const now = new Date();
-    const startTime = new Date(scheduleToUse!.startTime);
+    const startTime = new Date(currentSchedule.startTime);
 
     // 상태 메시지 설정
-    if (scheduleToUse === inProgressSchedule) {
+    if (currentSchedule.status === 'IN_PROGRESS' || currentSchedule === inProgressSchedule) {
       // 진행 중인 일정 표시
       setScheduleStatusInfo({
         text: "진행 중",
@@ -288,14 +272,14 @@ const Home: FC = () => {
         });
       }
     }
-  }, [nearestSchedule, inProgressSchedule, currentTime, refreshToken]);
+  }, [inProgressSchedule, nearestSchedule, currentTime, refreshToken, getCurrentSchedule]);
 
   // 루틴 이름과 세부 정보 로드
   useEffect(() => {
-    const scheduleToUse = inProgressSchedule || nearestSchedule;
+    const currentSchedule = getCurrentSchedule();
 
-    if (scheduleToUse && scheduleToUse.routineId) {
-      getRoutineById(scheduleToUse.routineId)
+    if (currentSchedule && currentSchedule.routineId) {
+      getRoutineById(currentSchedule.routineId)
           .then((data: RoutineInfo) => {
             setRoutineName(data.name);
             setCurrentRoutineDetails(data);
@@ -308,7 +292,7 @@ const Home: FC = () => {
       setRoutineName(null);
       setCurrentRoutineDetails(null);
     }
-  }, [inProgressSchedule, nearestSchedule, refreshToken]);
+  }, [inProgressSchedule, nearestSchedule, refreshToken, getCurrentSchedule]);
 
   // 날짜 포맷팅 함수
   const formatDateTime = (dateTimeString: string) => {
@@ -330,6 +314,9 @@ const Home: FC = () => {
       router.push(chatUrl);
     }
   };
+
+  // 현재 표시할 일정 가져오기
+  const currentSchedule = getCurrentSchedule();
 
   return (
       <div className="flex flex-col w-full h-full">
@@ -393,7 +380,7 @@ const Home: FC = () => {
             </div>
 
             {/* 일정이 없는 경우(로딩 완료 후) */}
-            {scheduleDataReady && !isLoading && !nearestSchedule && (
+            {scheduleDataReady && !isLoading && !currentSchedule && (
                 <div
                     data-aos="fade-up"
                     data-aos-easing="ease-in-out"
@@ -406,15 +393,8 @@ const Home: FC = () => {
                 </div>
             )}
 
-            {/* 로딩 중 표시 */}
-            {/*          {isLoading && !scheduleDataReady && (
-              <div className="w-full p-[15px] rounded-[6px] mb-[22px] flex justify-center items-center">
-                <p className="text-[#383838] text-[17px] font-[500]">일정을 불러오는 중...</p>
-              </div>
-          )}*/}
-
             {/* 일정이 있는 경우(로딩 완료 후) */}
-            {scheduleDataReady && nearestSchedule && (
+            {scheduleDataReady && currentSchedule && (
                 <div
                     data-aos="fade-up"
                     data-aos-easing="ease-in-out"
@@ -425,18 +405,18 @@ const Home: FC = () => {
                 >
                   <div className="flex justify-between items-center w-full mb-[8px] ">
                     <p className="text-[#383838] text-[17px] font-[500] tracking-[-0.4px] leading-[155%] line-clamp-1">
-                      {nearestSchedule.title}
+                      {currentSchedule.title}
                     </p>
                     <div className="flex items-center gap-x-[1px]">
                       <img src="/icon/clock.svg" alt="clock icon" />
                       <p className="text-[#0080FF] text-[16px] font-[500] tracking-[-0.4px] leading-[160%]">
-                        {format(new Date(nearestSchedule.startTime), "HH:mm")}
+                        {format(new Date(currentSchedule.startTime), "HH:mm")}
                       </p>
                     </div>
                   </div>
-                  {nearestSchedule.location && (
+                  {currentSchedule.location && (
                       <p className="text-[#383838] text-[15px] font-[400] tracking-[-0.1px] leading-[160%] line-clamp-1">
-                        장소 : <span>{nearestSchedule.location}</span>
+                        장소 : <span>{currentSchedule.location}</span>
                       </p>
                   )}
                   {routineName && (
@@ -447,14 +427,14 @@ const Home: FC = () => {
                 </span>
                       </p>
                   )}
-                  {nearestSchedule.supplies && (
+                  {currentSchedule.supplies && (
                       <p className="text-[#383838] text-[15px] font-[400] tracking-[-0.1px] leading-[160%]">
-                        준비물 : <span>{nearestSchedule.supplies}</span>
+                        준비물 : <span>{currentSchedule.supplies}</span>
                       </p>
                   )}
-                  {nearestSchedule.memo && (
+                  {currentSchedule.memo && (
                       <p className="text-[#383838] text-[15px] font-[400] tracking-[-0.1px] leading-[160%]">
-                        메모 : <span>{nearestSchedule.memo}</span>
+                        메모 : <span>{currentSchedule.memo}</span>
                       </p>
                   )}
                   <div className="my-[10px] w-full h-[1px] bg-[#dfdfdf]"></div>
@@ -583,19 +563,29 @@ const Home: FC = () => {
                     </p>
                   </Link>
                   <div className="mt-[20px] mb-[13px] w-full h-[1px] bg-[#dfdfdf]"></div>
-                  <div className="flex justify-between items-center w-full mb-[8px] ">
-                    <p className="text-[#383838] text-[16px] font-[500] tracking-[-0.8px] leading-[155%] line-clamp-1 mb-[7px]">
-                      {currentRoutineDetails ? currentRoutineDetails.name : (routineName || "루틴 정보 로딩 중...")}
+                  <div className="flex justify-between items-center w-full mb-[8px]">
+                    <p className="text-[#383838] text-[17px] font-[600] tracking-[-0.4px] leading-[110%] line-clamp-1">
+                      설정된 루틴
                     </p>
+                    <div className="flex items-center gap-x-[1px]">
+                      <span className="text-[#01274f] text-[15px] font-[600] tracking-[-0.8px] leading-[102%] line-clamp-1">
+                        {currentRoutineDetails ?
+                            `${currentRoutineDetails.name} (${currentRoutineDetails.totalDurationMinutes ||
+                            (currentRoutineDetails.items ?
+                                currentRoutineDetails.items.reduce((sum, item) => sum + item.durationMinutes, 0) : 0)}분)`
+                            : (routineName ? `${routineName} (로딩 중...)` : "루틴 없음")
+                        }
+                      </span>
+                    </div>
                   </div>
                   <div className="flex flex-col gap-[9px]">
-                    {currentRoutineDetails && currentRoutineDetails.items && currentRoutineDetails.items.length > 0 && scheduleToUse && scheduleToUse.startTime ? (
+                    {currentRoutineDetails && currentRoutineDetails.items && currentRoutineDetails.items.length > 0 && currentSchedule && currentSchedule.startTime ? (
                         (() => {
                           let accumulatedDurationMinutes = 0;
-                          const scheduleStartTimeDate = new Date(scheduleToUse.startTime);
+                          const scheduleStartTimeDate = new Date(currentSchedule.startTime);
 
                           if (isNaN(scheduleStartTimeDate.getTime())) {
-                            console.error("Invalid schedule start time:", scheduleToUse.startTime);
+                            console.error("Invalid schedule start time:", currentSchedule.startTime);
                             return <p className="text-center text-red-500 py-2">스케줄 시작 시간이 유효하지 않습니다.</p>;
                           }
 
@@ -612,7 +602,7 @@ const Home: FC = () => {
                             if (currentTime >= itemEndTime) {
                               itemStatus = "완료";
                               itemIcon = "✅";
-                              itemBgColor = "bg-green-500";
+                              itemBgColor = "bg-[#888]";
                             } else if (currentTime >= itemStartTime && currentTime < itemEndTime) {
                               itemStatus = "진행 중";
                               itemIcon = "⌛";
@@ -637,8 +627,8 @@ const Home: FC = () => {
                             );
                           });
                         })()
-                    ) : scheduleToUse && scheduleToUse.routineId ? (
-                        <p className="text-center text-gray-500 py-2">루틴 아이템을 불러오는 중이거나 아이템이 없습니다.</p>
+                    ) : currentSchedule && currentSchedule.routineId ? (
+                        <p className="text-center text-gray-500 py-2"> </p>
                     ) : (
                         <p className="text-center text-gray-500 py-2">선택된 루틴이 없습니다.</p>
                     )}
@@ -687,9 +677,13 @@ const Home: FC = () => {
             >
               {isLoading ? (
                   <p className="text-center py-2">일정을 불러오는 중...</p>
-              ) : upcomingSchedules.filter(schedule => new Date(schedule.startTime) > new Date()).length > 0 ? (
+              ) : upcomingSchedules.filter(schedule =>
+                  schedule.status !== 'IN_PROGRESS' && new Date(schedule.startTime) > new Date()
+              ).length > 0 ? (
                   upcomingSchedules
-                      .filter(schedule => new Date(schedule.startTime) > new Date())
+                      .filter(schedule =>
+                          schedule.status !== 'IN_PROGRESS' && new Date(schedule.startTime) > new Date()
+                      )
                       .map((schedule) => (
                           <Link
                               key={schedule.id}

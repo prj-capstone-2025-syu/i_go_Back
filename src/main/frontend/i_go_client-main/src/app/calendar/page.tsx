@@ -6,12 +6,14 @@ import dayGridPlugin from "@fullcalendar/daygrid";
 import listPlugin from "@fullcalendar/list";
 import koLocale from "@fullcalendar/core/locales/ko";
 import { getSchedules } from "@/api/scheduleApi";
+import { useNotification } from "@/components/common/NotificationContext";{/*버튼주석*/}
 
 export default function Calendar() {
   const [events, setEvents] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [selectedEvent, setSelectedEvent] = useState(null);
+  const { routineNotificationOpen } = useNotification();{/*버튼주석*/}
 
   // 일정 데이터 가져오기
   const fetchSchedules = async () => {
@@ -36,7 +38,7 @@ export default function Calendar() {
 
       if (schedules && schedules.length > 0) {
         // 백엔드 데이터를 FullCalendar 이벤트 형식으로 변환
-        const formattedEvents = schedules.map(schedule => ({
+        const formattedEvents = schedules.map((schedule: { id: any; title: any; startTime: any; endTime: any; category: any; location: any; memo: any; routineId: any; }) => ({
           id: schedule.id,
           title: schedule.title,
           start: schedule.startTime,
@@ -59,7 +61,7 @@ export default function Calendar() {
   };
 
   // 카테고리별 색상 반환
-  const getCategoryColor = (category) => {
+  const getCategoryColor = (category: any) => {
     switch (category) {
       case "DAILY": return "#4285F4";
       case "WORK": return "#0F9D58";
@@ -70,7 +72,7 @@ export default function Calendar() {
   };
 
   // 이벤트 클릭 핸들러
-  const handleEventClick = (info) => {
+  const handleEventClick = (info: { event: { id: any; title: any; start: any; end: any; }; }) => {
     console.log("선택된 이벤트:", info.event);
     // 이벤트 정보 저장
     setSelectedEvent({
@@ -132,7 +134,9 @@ export default function Calendar() {
 
         <NavBar title="캘린더" link="#" />
 
-        <div className="z-[999] absolute bottom-[0px] left-[0px] grid grid-cols-2 w-full bg-[#fff] p-[12px] gap-[12px]">
+        <div className={`z-[999] absolute bottom-[0px] left-[0px] grid grid-cols-2 w-full bg-[#fff] p-[12px] gap-[12px] ${
+          routineNotificationOpen ? 'filter blur-sm pointer-events-none' : ''
+        }`}>{/*버튼주석*/}
           <button
               className={`hover:opacity-[0.7] cursor-pointer py-[10px] px-[5px] bg-[#fff] border-[1px] 
           ${selectedEvent ? 'border-[#01274F] text-[#01274F]' : 'border-[#999] text-[#999]'} 
