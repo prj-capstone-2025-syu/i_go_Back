@@ -104,8 +104,8 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
             }
         };
 
-        // 10초마다 스케줄 체크 (개발용, 실제는 1분 정도가 적절)
-        const intervalId = setInterval(checkSchedules, 10000);
+        // 60초마다 스케줄 체크
+        const intervalId = setInterval(checkSchedules, 60000);
         checkSchedules(); // 초기 로드 시 한번 체크
 
         return () => clearInterval(intervalId);

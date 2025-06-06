@@ -653,8 +653,8 @@ const ChatInterface = ({
     setInputValue("");
     setLoading(true);
     try {
-      const sessionId = "1";
-      const aiResponse = await sendChatMessage(message, sessionId);
+      // sessionId 파라미터 제거
+      const aiResponse = await sendChatMessage(message);
 
       // 1. function_call이 객체로 오면 정상 처리
       if (aiResponse.function_call) {
