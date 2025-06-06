@@ -123,7 +123,7 @@ export default function SettingPage() {
             <div className="flex w-full items-center justify-between">
               <span className="text-[#999999] text-[15px]">푸시알림</span>
               <div className="flex items-center">
-                <span className="mr-[8px] text-[#999999] text-[15px]">전체 On/Off</span>
+                <span className="mr-[8px] text-[#999999] text-[15px]">전체 Off/On</span>
                 <div className="relative flex rounded-full overflow-hidden cursor-pointer">
                   <input
                       id="checkbox-all"

@@ -1,7 +1,8 @@
 import axios from 'axios';
 import {app} from '@/utils/firebase'; // Firebase 초기화 코드가 있는 파일에서 app을 가져옵니다.
 import { getMessaging, getToken } from "firebase/messaging"; // Firebase 메시징
-
+//TODO: 백엔드 URL 설정
+//const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://igo.ai.kr';
 const API_URL = 'http://localhost:8080';
 const api = axios.create({
     baseURL: `${API_URL}/api`,

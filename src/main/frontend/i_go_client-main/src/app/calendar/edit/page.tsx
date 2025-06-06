@@ -4,10 +4,21 @@ import React, { useState, useEffect } from "react";
 import { getScheduleById, updateSchedule, deleteSchedule } from "@/api/scheduleApi";
 import { getRoutineNames } from "@/api/routineApi";
 import { useSearchParams, useRouter } from 'next/navigation';
+import ConfirmPopup from "@/components/common/ConfirmPopup";
 
 interface RoutineName {
   id: number;
   name: string;
+}
+
+interface ValidationErrors {
+  title?: string;
+  startDate?: string;
+  startTime?: string;
+  endDate?: string;
+  endTime?: string;
+  dateTime?: string;
+  routine?: string;
 }
 
 export default function EditSchedule() {
@@ -31,6 +42,10 @@ export default function EditSchedule() {
   });
   const [loading, setLoading] = useState(false);
   const [initialLoading, setInitialLoading] = useState(true);
+  const [errors, setErrors] = useState<ValidationErrors>({});
+  const [touched, setTouched] = useState<Record<string, boolean>>({});
+  const [showSubmitErrors, setShowSubmitErrors] = useState(false);
+  const [isDeletePopupOpen, setIsDeletePopupOpen] = useState(false);
 
   // 시간 정보 파싱 함수
   const parseDateTime = (dateTimeStr: string) => {
@@ -41,6 +56,99 @@ export default function EditSchedule() {
     const time = dateTimeStr.split("T")[1].substring(0, 5); // HH:mm 형식
 
     return { date, time };
+  };
+
+  // 유효성 검사 함수
+  const validateField = (name: string, value: string, formData: any, selectedRoutine: string): string | undefined => {
+    switch (name) {
+      case 'title':
+        if (!value.trim()) {
+          return '일정 제목을 입력해주세요.';
+        }
+        break;
+      case 'startDate':
+        if (!value) {
+          return '시작 날짜를 선택해주세요.';
+        }
+        break;
+      case 'startTime':
+        if (!value) {
+          return '시작 시간을 입력해주세요.';
+        }
+        break;
+      case 'endDate':
+        if (!value) {
+          return '종료 날짜를 선택해주세요.';
+        }
+        break;
+      case 'endTime':
+        if (!value) {
+          return '종료 시간을 입력해주세요.';
+        }
+        break;
+      case 'routine':
+        if (!selectedRoutine) {
+          return '루틴이 선택되어 있지 않습니다.';
+        }
+        break;
+      case 'dateTime':
+        // 시작일시와 종료일시 비교 검사
+        if (formData.startDate && formData.startTime && formData.endDate && formData.endTime) {
+          const startDateTime = new Date(`${formData.startDate}T${formData.startTime}`);
+          const endDateTime = new Date(`${formData.endDate}T${formData.endTime}`);
+          if (endDateTime <= startDateTime) {
+            return '종료일시는 시작일시보다 늦어야 합니다.';
+          }
+        }
+        break;
+    }
+    return undefined;
+  };
+
+  // 전체 폼 유효성 검사
+  const validateForm = () => {
+    const newErrors: ValidationErrors = {};
+
+    // 각 필수 필드 검사
+    newErrors.title = validateField('title', formData.title, formData, selectedRoutine);
+    newErrors.startDate = validateField('startDate', formData.startDate, formData, selectedRoutine);
+    newErrors.startTime = validateField('startTime', formData.startTime, formData, selectedRoutine);
+    newErrors.endDate = validateField('endDate', formData.endDate, formData, selectedRoutine);
+    newErrors.endTime = validateField('endTime', formData.endTime, formData, selectedRoutine);
+    newErrors.routine = validateField('routine', '', formData, selectedRoutine);
+    newErrors.dateTime = validateField('dateTime', '', formData, selectedRoutine);
+
+    // undefined 값 제거
+    Object.keys(newErrors).forEach(key => {
+      if (newErrors[key as keyof ValidationErrors] === undefined) {
+        delete newErrors[key as keyof ValidationErrors];
+      }
+    });
+
+    setErrors(newErrors);
+    return Object.keys(newErrors).length === 0;
+  };
+
+  // 실시간 유효성 검사
+  useEffect(() => {
+    if (Object.keys(touched).length > 0 && !initialLoading) {
+      validateForm();
+    }
+  }, [formData, selectedRoutine, touched, initialLoading]);
+
+  // 제출 버튼 활성화 상태 확인
+  const isFormValid = () => {
+    return formData.title.trim() !== '' &&
+        formData.startDate !== '' &&
+        formData.startTime !== '' &&
+        formData.endDate !== '' &&
+        formData.endTime !== '' &&
+        selectedRoutine !== '' &&
+        Object.keys(errors).length === 0;
+  };
+
+  const handleFieldTouch = (fieldName: string) => {
+    setTouched(prev => ({ ...prev, [fieldName]: true }));
   };
 
   // 루틴 목록과 일정 데이터 로드
@@ -110,6 +218,7 @@ export default function EditSchedule() {
 
   const handleRoutineChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     setSelectedRoutine(e.target.value);
+    handleFieldTouch('routine');
   };
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -118,6 +227,7 @@ export default function EditSchedule() {
       ...prev,
       [name]: type === 'checkbox' ? checked : value
     }));
+    handleFieldTouch(name);
   };
 
   // 로컬 시간을 그대로 유지하는 ISO 문자열 생성 함수
@@ -128,31 +238,34 @@ export default function EditSchedule() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setShowSubmitErrors(true);
+
+    // 모든 필드를 touched로 설정
+    setTouched({
+      title: true,
+      startDate: true,
+      startTime: true,
+      endDate: true,
+      endTime: true,
+      routine: true
+    });
+
     if (!scheduleId) {
       alert('일정 ID가 없습니다.');
+      return;
+    }
+
+    // 유효성 검사
+    if (!validateForm()) {
       return;
     }
 
     setLoading(true);
 
     try {
-      // 시간 유효성 검사
-      if (!formData.startDate || !formData.startTime || !formData.endDate || !formData.endTime) {
-        alert('시작일시와 종료일시를 모두 입력해주세요.');
-        setLoading(false);
-        return;
-      }
-
       // 시간대 변환 없이 로컬 시간 그대로 사용
       const startDateTime = createLocalISOString(formData.startDate, formData.startTime);
       const endDateTime = createLocalISOString(formData.endDate, formData.endTime);
-
-      // 종료시간이 시작시간보다 빠른지 검사
-      if (new Date(endDateTime) <= new Date(startDateTime)) {
-        alert('종료일시는 시작일시보다 늦어야 합니다.');
-        setLoading(false);
-        return;
-      }
 
       const scheduleData = {
         routineId: selectedRoutine ? parseInt(selectedRoutine) : null,
@@ -187,14 +300,14 @@ export default function EditSchedule() {
       return;
     }
 
-    if (!confirm('정말로 이 일정을 삭제하시겠습니까?')) {
-      return;
-    }
+    setIsDeletePopupOpen(true);
+  };
 
+  const confirmDelete = async () => {
     setLoading(true);
 
     try {
-      await deleteSchedule(scheduleId);
+      await deleteSchedule(scheduleId!);
       alert('일정이 삭제되었습니다.');
       router.push('/calendar');
     } catch (error) {
@@ -202,7 +315,21 @@ export default function EditSchedule() {
       alert('일정 삭제에 실패했습니다.');
     } finally {
       setLoading(false);
+      setIsDeletePopupOpen(false);
     }
+  };
+
+  // 오류 메시지 표시 여부 결정
+  const shouldShowError = (fieldName: keyof ValidationErrors) => {
+    return (touched[fieldName] || showSubmitErrors) && errors[fieldName];
+  };
+
+  // 필드 테두리 색상 결정
+  const getFieldBorderClass = (fieldName: keyof ValidationErrors) => {
+    if (shouldShowError(fieldName)) {
+      return "border-red-500 focus:border-red-500";
+    }
+    return "border-[#DFDFDF] focus:border-[#383838]";
   };
 
   if (initialLoading) {
@@ -229,67 +356,93 @@ export default function EditSchedule() {
                     {/* 일정 제목 */}
                     <div className="relative">
                       <p className="text-[#383838] text-[13px] font-[500] tracking-[-0.4px] mb-[7px]">
-                        일정 제목
+                        일정 제목 <span className="text-red-500">*</span>
                       </p>
                       <input
                           type="text"
                           name="title"
                           value={formData.title}
                           onChange={handleInputChange}
+                          onBlur={() => handleFieldTouch('title')}
                           required
                           placeholder="일정명을 입력해주세요."
-                          className="text-[13px] text-[#383838] font-[400] tracking-[-0.4px] w-full border-[1px] border-[#DFDFDF] py-[8px] px-[15px] rounded-[4px] focus:border-[#383838] outline-none"
+                          className={`text-[13px] text-[#383838] font-[400] tracking-[-0.4px] w-full border-[1px] py-[8px] px-[15px] rounded-[4px] outline-none ${getFieldBorderClass('title')}`}
                       />
+                      {shouldShowError('title') && (
+                          <p className="text-red-500 text-[11px] mt-1">{errors.title}</p>
+                      )}
                     </div>
 
                     {/* 시작일시 */}
                     <div className="relative">
                       <p className="text-[#383838] text-[13px] font-[500] tracking-[-0.4px] mb-[7px]">
-                        시작일시
+                        시작일시 <span className="text-red-500">*</span>
                       </p>
                       <div className="flex justify-between items-center w-full gap-x-[8px]">
-                        <input
-                            type="date"
-                            name="startDate"
-                            value={formData.startDate}
-                            onChange={handleInputChange}
-                            required
-                            className="text-[13px] text-[#383838] font-[400] tracking-[-0.4px] w-full border-[1px] border-[#DFDFDF] py-[8px] px-[15px] rounded-[4px] focus:border-[#383838] outline-none"
-                        />
-                        <input
-                            type="time"
-                            name="startTime"
-                            value={formData.startTime}
-                            onChange={handleInputChange}
-                            required
-                            className="text-[13px] text-[#383838] font-[400] tracking-[-0.4px] w-full border-[1px] border-[#DFDFDF] py-[8px] px-[15px] rounded-[4px] focus:border-[#383838] outline-none"
-                        />
+                        <div className="w-full">
+                          <input
+                              type="date"
+                              name="startDate"
+                              value={formData.startDate}
+                              onChange={handleInputChange}
+                              onBlur={() => handleFieldTouch('startDate')}
+                              required
+                              className={`text-[13px] text-[#383838] font-[400] tracking-[-0.4px] w-full border-[1px] py-[8px] px-[15px] rounded-[4px] outline-none ${getFieldBorderClass('startDate')}`}
+                          />
+                        </div>
+                        <div className="w-full">
+                          <input
+                              type="time"
+                              name="startTime"
+                              value={formData.startTime}
+                              onChange={handleInputChange}
+                              onBlur={() => handleFieldTouch('startTime')}
+                              required
+                              className={`text-[13px] text-[#383838] font-[400] tracking-[-0.4px] w-full border-[1px] py-[8px] px-[15px] rounded-[4px] outline-none ${getFieldBorderClass('startTime')}`}
+                          />
+                        </div>
                       </div>
+                      {(shouldShowError('startDate') || shouldShowError('startTime')) && (
+                          <p className="text-red-500 text-[11px] mt-1">
+                            {errors.startDate || errors.startTime}
+                          </p>
+                      )}
                     </div>
 
                     {/* 종료일시 */}
                     <div className="relative">
                       <p className="text-[#383838] text-[13px] font-[500] tracking-[-0.4px] mb-[7px]">
-                        종료일시
+                        종료일시 <span className="text-red-500">*</span>
                       </p>
                       <div className="flex justify-between items-center w-full gap-x-[8px]">
-                        <input
-                            type="date"
-                            name="endDate"
-                            value={formData.endDate}
-                            onChange={handleInputChange}
-                            required
-                            className="text-[13px] text-[#383838] font-[400] tracking-[-0.4px] w-full border-[1px] border-[#DFDFDF] py-[8px] px-[15px] rounded-[4px] focus:border-[#383838] outline-none"
-                        />
-                        <input
-                            type="time"
-                            name="endTime"
-                            value={formData.endTime}
-                            onChange={handleInputChange}
-                            required
-                            className="text-[13px] text-[#383838] font-[400] tracking-[-0.4px] w-full border-[1px] border-[#DFDFDF] py-[8px] px-[15px] rounded-[4px] focus:border-[#383838] outline-none"
-                        />
+                        <div className="w-full">
+                          <input
+                              type="date"
+                              name="endDate"
+                              value={formData.endDate}
+                              onChange={handleInputChange}
+                              onBlur={() => handleFieldTouch('endDate')}
+                              required
+                              className={`text-[13px] text-[#383838] font-[400] tracking-[-0.4px] w-full border-[1px] py-[8px] px-[15px] rounded-[4px] outline-none ${getFieldBorderClass('endDate')}`}
+                          />
+                        </div>
+                        <div className="w-full">
+                          <input
+                              type="time"
+                              name="endTime"
+                              value={formData.endTime}
+                              onChange={handleInputChange}
+                              onBlur={() => handleFieldTouch('endTime')}
+                              required
+                              className={`text-[13px] text-[#383838] font-[400] tracking-[-0.4px] w-full border-[1px] py-[8px] px-[15px] rounded-[4px] outline-none ${getFieldBorderClass('endTime')}`}
+                          />
+                        </div>
                       </div>
+                      {(shouldShowError('endDate') || shouldShowError('endTime') || shouldShowError('dateTime')) && (
+                          <p className="text-red-500 text-[11px] mt-1">
+                            {errors.endDate || errors.endTime || errors.dateTime}
+                          </p>
+                      )}
                     </div>
 
                     {/* 장소 */}
@@ -310,7 +463,7 @@ export default function EditSchedule() {
                     {/* 루틴 선택 */}
                     <div className="relative">
                       <p className="text-[#383838] text-[13px] font-[500] tracking-[-0.4px] mb-[7px]">
-                        루틴 선택
+                        루틴 선택 <span className="text-red-500">*</span>
                         <span className="text-[10px] text-gray-500 ml-1">
                         ({routines.length}개)
                       </span>
@@ -319,7 +472,8 @@ export default function EditSchedule() {
                         <select
                             value={selectedRoutine}
                             onChange={handleRoutineChange}
-                            className="appearance-none bg-transparent w-full h-full outline-none border-[1px] border-[#DFDFDF] focus:border-[#383838] pl-[15px] pr-[42px] py-[8px] text-[13px] rounded-[4px]"
+                            onBlur={() => handleFieldTouch('routine')}
+                            className={`appearance-none bg-transparent w-full h-full outline-none border-[1px] pl-[15px] pr-[42px] py-[8px] text-[13px] rounded-[4px] ${getFieldBorderClass('routine')}`}
                         >
                           <option value="">루틴을 선택하세요.</option>
                           {routines && routines.length > 0 ? (
@@ -350,6 +504,9 @@ export default function EditSchedule() {
                           </svg>
                         </div>
                       </div>
+                      {shouldShowError('routine') && (
+                          <p className="text-red-500 text-[11px] mt-1">{errors.routine}</p>
+                      )}
                     </div>
 
                     {/* 준비물 */}
@@ -432,8 +589,12 @@ export default function EditSchedule() {
                       </button>
                       <button
                           type="submit"
-                          disabled={loading}
-                          className="flex justify-center bg-[#01274F] hover:bg-[#01274F]/90 disabled:bg-gray-400 min-w-[115px] py-[10px] px-[20px] rounded-[4px]"
+                          disabled={loading || !isFormValid()}
+                          className={`flex justify-center min-w-[115px] py-[10px] px-[20px] rounded-[4px] transition-all duration-200 ${
+                              isFormValid() && !loading
+                                  ? 'bg-[#01274F] hover:bg-[#01274F]/90 cursor-pointer'
+                                  : 'bg-gray-400 cursor-not-allowed'
+                          }`}
                       >
                       <span className="font-[500] text-[15px] leading-[19px] tracking-[-0.4px] text-[#fff]">
                         {loading ? '수정 중...' : '일정 수정하기'}
@@ -446,6 +607,13 @@ export default function EditSchedule() {
             </div>
           </div>
         </div>
+
+        <ConfirmPopup
+          isOpen={isDeletePopupOpen}
+          message={`스케줄 '${formData.title}'을 삭제하시겠습니까?`}
+          onConfirm={confirmDelete}
+          onCancel={() => setIsDeletePopupOpen(false)}
+        />
       </div>
   );
 }

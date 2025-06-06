@@ -3,13 +3,13 @@ package com.example.demo.repository;
 import com.example.demo.entity.schedule.Schedule;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 import java.time.LocalDateTime;
 import java.util.List;
-import java.util.Optional;
 
 @Repository
 public interface ScheduleRepository extends JpaRepository<Schedule, Long> {
@@ -31,4 +31,10 @@ public interface ScheduleRepository extends JpaRepository<Schedule, Long> {
     // 진행 중인 일정 조회 (startTime <= now AND endTime > now), 가장 최근 시작된 것 우선
     @Query("SELECT s FROM Schedule s WHERE s.user.id = :userId AND s.startTime <= :now AND s.endTime > :now ORDER BY s.startTime DESC")
     List<Schedule> findLatestInProgressSchedulesByUserId(@Param("userId") Long userId, @Param("now") LocalDateTime now, Pageable pageable);
+
+    // 사용자 ID로 모든 일정 삭제
+    @Modifying
+    @Query("DELETE FROM Schedule s WHERE s.user.id = :userId")
+    void deleteAllByUserId(@Param("userId") Long userId);
 }
+

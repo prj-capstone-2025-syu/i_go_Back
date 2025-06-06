@@ -232,6 +232,7 @@ const ChatInterface = () => {
               text: "Google 계정으로 로그인",
               icon: <GoogleIcon />,
               onClick: () => {
+                //TODO: 백엔드 URL 설정
                 //const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'https://igo.ai.kr';
                 const BACKEND_URL = 'http://localhost:8080';
                 // Google OAuth 인증 URL로 리다이렉트
@@ -289,6 +290,7 @@ const ChatInterface = () => {
               text: "Google 계정으로 시작하기",
               icon: <GoogleIcon />,
               onClick: () => {
+                //TODO: 백엔드 URL 설정
                 //const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'https://igo.ai.kr';
                 const BACKEND_URL = 'http://localhost:8080';
                 // Google OAuth 인증 URL로 리다이렉트

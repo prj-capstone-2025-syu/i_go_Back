@@ -5,8 +5,10 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation"; // next/navigation에서 useRouter 임포트
 import { getCurrentUser, logout, deleteAccount } from "@/api/userApi"; // userApi 사용
+import LogoutPopup from "@/components/common/LogoutPopup";
+import WithdrawPopup from "@/components/common/WithdrawPopup";
 
-export default function MypageEdit() { // 컴포넌트 이름 변경 (Home -> MypageEdit)
+export default function MypageEdit() {
   const [user, setUser] = useState({
     email: "",
     nickname: "",
@@ -14,6 +16,8 @@ export default function MypageEdit() { // 컴포넌트 이름 변경 (Home -> My
   });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null); // 에러 상태 타입 명시
+  const [showLogoutPopup, setShowLogoutPopup] = useState(false);
+  const [showWithdrawPopup, setShowWithdrawPopup] = useState(false);
   const router = useRouter();
 
   useEffect(() => {
@@ -48,32 +52,46 @@ export default function MypageEdit() { // 컴포넌트 이름 변경 (Home -> My
     fetchUserData();
   }, [router]); // router를 의존성 배열에 추가 (페이지 이동 후 재요청 방지 목적은 아님)
 
+  // 로그아웃 팝업 표시
+  const openLogoutPopup = () => {
+    setShowLogoutPopup(true);
+  };
+
+  // 회원탈퇴 팝업 표시
+  const openWithdrawPopup = () => {
+    setShowWithdrawPopup(true);
+  };
+
+  // 팝업 닫기
+  const closePopups = () => {
+    setShowLogoutPopup(false);
+    setShowWithdrawPopup(false);
+  };
+
   const handleLogout = async () => {
-    if (confirm("로그아웃 하시겠습니까?")) {
-      try {
-        await logout();
-        alert("로그아웃되었습니다.");
-        // 쿠키가 제거되므로, 사용자 상태를 초기화하거나 페이지를 새로고침/리디렉션합니다.
-        router.push("/"); // 홈으로 이동 또는 로그인 페이지로 이동
-        // window.location.href = '/'; // 또는 전체 새로고침
-      } catch (err) {
-        console.error("로그아웃 실패:", err);
-        alert("로그아웃 중 오류가 발생했습니다.");
-      }
+    try {
+      await logout();
+      // 쿠키제거
+      router.push("/"); // 홈으로 이동 또는 로그인 페이지로 이동
+      // window.location.href = '/'; // 또는 전체 새로고침
+    } catch (err) {
+      console.error("로그아웃 실패:", err);
+      alert("로그아웃 중 오류가 발생했습니다.");
+    } finally {
+      closePopups();
     }
   };
 
   const handleDeleteAccount = async () => {
-    if (confirm("정말로 회원탈퇴 하시겠습니까? 이 작업은 되돌릴 수 없습니다.")) {
-      try {
-        await deleteAccount();
-        alert("회원탈퇴가 성공적으로 처리되었습니다.");
-        router.push("/"); // 홈으로 이동 또는 안내 페이지로 이동
-        // window.location.href = '/'; // 또는 전체 새로고침
-      } catch (err) {
-        console.error("회원탈퇴 실패:", err);
-        alert("회원탈퇴 중 오류가 발생했습니다.");
-      }
+    try {
+      await deleteAccount();
+      router.push("/"); // 홈으로 이동 또는 안내 페이지로 이동
+      // window.location.href = '/'; // 또는 전체 새로고침
+    } catch (err) {
+      console.error("회원탈퇴 실패:", err);
+      alert("회원탈퇴 중 오류가 발생했습니다.");
+    } finally {
+      closePopups();
     }
   };
 
@@ -143,7 +161,7 @@ export default function MypageEdit() { // 컴포넌트 이름 변경 (Home -> My
             <div className="w-full flex gap-x-[15px]">
               {/* 로그아웃 버튼 */}
               <button
-                  onClick={handleLogout}
+                  onClick={openLogoutPopup}
                   className="hover:opacity-[0.7] border-[1px] p-[20px] border-[#dfdfdf] rounded-[6px] bg-[#fff] w-full shadow-sm flex justify-center items-center"
               >
                 <p className="text-[17px] font-[500] text-[#01274F] leading-[130%] line-clamp-1">
@@ -152,7 +170,7 @@ export default function MypageEdit() { // 컴포넌트 이름 변경 (Home -> My
               </button>
               {/* 회원탈퇴 버튼 */}
               <button
-                  onClick={handleDeleteAccount}
+                  onClick={openWithdrawPopup}
                   className="hover:opacity-[0.7] border-[1px] p-[20px] border-[#dfdfdf] rounded-[6px] bg-[#fff] w-full shadow-sm flex justify-center items-center"
               >
                 <p className="text-[17px] font-[500] text-[#ff2f01] leading-[130%] line-clamp-1">
@@ -162,6 +180,20 @@ export default function MypageEdit() { // 컴포넌트 이름 변경 (Home -> My
             </div>
           </div>
         </div>
+
+        {/* 로그아웃 팝업 */}
+        <LogoutPopup
+          isOpen={showLogoutPopup}
+          onConfirm={handleLogout}
+          onCancel={closePopups}
+        />
+
+        {/* 회원탈퇴 팝업 */}
+        <WithdrawPopup
+          isOpen={showWithdrawPopup}
+          onConfirm={handleDeleteAccount}
+          onCancel={closePopups}
+        />
       </div>
   );
 }
