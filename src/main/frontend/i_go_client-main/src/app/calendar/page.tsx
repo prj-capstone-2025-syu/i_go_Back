@@ -135,7 +135,7 @@ export default function Calendar() {
         <NavBar title="캘린더" link="#" />
 
         <div className={`z-[999] absolute bottom-[0px] left-[0px] grid grid-cols-2 w-full bg-[#fff] p-[12px] gap-[12px] ${
-          routineNotificationOpen ? 'filter blur-sm pointer-events-none' : ''
+            routineNotificationOpen ? 'filter blur-sm pointer-events-none' : ''
         }`}>{/*버튼주석*/}
           <button
               className={`hover:opacity-[0.7] cursor-pointer py-[10px] px-[5px] bg-[#fff] border-[1px] 

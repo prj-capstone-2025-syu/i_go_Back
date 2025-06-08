@@ -117,29 +117,35 @@ public class GoogleCalendarService {
         event.setLocation(schedule.getLocation());
         event.setDescription(schedule.getMemo());
 
-        // UTC 시간으로 변환
-        DateTime startDateTime = new DateTime(schedule.getStartTime().toInstant(ZoneOffset.UTC).toEpochMilli());
+        // 한국 시간대 명시적 지정 (createEvent와 동일하게 적용)
+        ZoneId koreaZoneId = ZoneId.of("Asia/Seoul");
+
+        // LocalDateTime을 Asia/Seoul 시간대로 해석하여 변환
+        DateTime startDateTime = new DateTime(
+                schedule.getStartTime().atZone(koreaZoneId).toInstant().toEpochMilli());
         EventDateTime start = new EventDateTime()
                 .setDateTime(startDateTime)
-                .setTimeZone("UTC");
+                .setTimeZone("Asia/Seoul"); // 명시적으로 KST 지정
         event.setStart(start);
 
         if (schedule.getEndTime() != null) {
-            DateTime endDateTime = new DateTime(schedule.getEndTime().toInstant(ZoneOffset.UTC).toEpochMilli());
+            DateTime endDateTime = new DateTime(
+                    schedule.getEndTime().atZone(koreaZoneId).toInstant().toEpochMilli());
             EventDateTime end = new EventDateTime()
                     .setDateTime(endDateTime)
-                    .setTimeZone("UTC");
+                    .setTimeZone("Asia/Seoul");
             event.setEnd(end);
         } else {
-            DateTime endDateTime = new DateTime(schedule.getStartTime().plusHours(1).toInstant(ZoneOffset.UTC).toEpochMilli());
+            DateTime endDateTime = new DateTime(
+                    schedule.getStartTime().plusHours(1).atZone(koreaZoneId).toInstant().toEpochMilli());
             EventDateTime end = new EventDateTime()
                     .setDateTime(endDateTime)
-                    .setTimeZone("UTC");
+                    .setTimeZone("Asia/Seoul");
             event.setEnd(end);
         }
 
         // 디버깅을 위한 로그 추가
-        logger.info("이벤트 업데이트 - 원본 시작: {}, 변환 후(UTC): {}",
+        logger.info("이벤트 업데이트 - 원본 시작: {}, 변환 후(Asia/Seoul): {}",
                 schedule.getStartTime(),
                 startDateTime.toStringRfc3339());
 
