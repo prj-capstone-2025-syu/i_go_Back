@@ -5,6 +5,7 @@ import { createSchedule } from "@/api/scheduleApi";
 import { getRoutineNames } from "@/api/routineApi";
 import { useRouter } from "next/navigation";
 import AddressSearch from "@/components/common/AddressSearch";
+import KakaoMapScript from "@/components/common/KakaoMapScript";
 
 interface RoutineName {
   id: number;
@@ -151,6 +152,7 @@ export default function CreateSchedule() {
       // 시간 유효성 검사
       if (!formData.startDate || !formData.startTime || !formData.endDate || !formData.endTime) {
         alert('시작일시와 종료일시를 모두 입력해주세요.');
+        setLoading(false); // 로딩 상태 해제 추가
         return;
       }
 
@@ -161,6 +163,7 @@ export default function CreateSchedule() {
       // 종료시간이 시작시간보다 빠른지 검사
       if (new Date(endDateTime) <= new Date(startDateTime)) {
         alert('종료일시는 시작일시보다 늦어야 합니다.');
+        setLoading(false); // 로딩 상태 해제 추가
         return;
       }
 
@@ -479,3 +482,4 @@ export default function CreateSchedule() {
       </div>
   );
 }
+
