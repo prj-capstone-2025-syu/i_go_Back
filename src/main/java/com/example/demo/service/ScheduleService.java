@@ -49,7 +49,9 @@ public class ScheduleService {
 
     // 루틴 기반 일정 생성 (종료 시간을 직접 받음)
     public Schedule createFromRoutine(Long userId, Long routineId, String title, LocalDateTime startTime,
-                                      LocalDateTime endTime, String location, String memo, String supplies, String category) {
+                                      LocalDateTime endTime, String startLocation, Double startX, Double startY,
+                                      String location, Double destinationX, Double destinationY,
+                                      String memo, String supplies, String category) {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new IllegalArgumentException("사용자를 찾을 수 없습니다. ID: " + userId));
 
@@ -72,7 +74,12 @@ public class ScheduleService {
                 .title(title)
                 .startTime(startTime)
                 .endTime(endTime)
+                .startLocation(startLocation)
+                .startX(startX)
+                .startY(startY)
                 .location(location)
+                .destinationX(destinationX)
+                .destinationY(destinationY)
                 .memo(memo)
                 .category(Category.valueOf(category.toUpperCase()))
                 .routineId(routineId)
@@ -100,7 +107,9 @@ public class ScheduleService {
 
     // 일정 수정
     public Schedule updateSchedule(Long userId, Long scheduleId, Long routineId, String title,
-                                   LocalDateTime startTime, LocalDateTime endTime, String location,
+                                   LocalDateTime startTime, LocalDateTime endTime,
+                                   String startLocation, Double startX, Double startY,
+                                   String location, Double destinationX, Double destinationY,
                                    String memo, String supplies, String category) {
         Schedule schedule = scheduleRepository.findById(scheduleId)
                 .orElseThrow(() -> new IllegalArgumentException("수정할 일정을 찾을 수 없습니다. ID: " + scheduleId));
@@ -125,7 +134,12 @@ public class ScheduleService {
         schedule.setTitle(title);
         schedule.setStartTime(startTime);
         schedule.setEndTime(endTime);
+        schedule.setStartLocation(startLocation);
+        schedule.setStartX(startX);
+        schedule.setStartY(startY);
         schedule.setLocation(location);
+        schedule.setDestinationX(destinationX);
+        schedule.setDestinationY(destinationY);
         schedule.setMemo(memo);
         schedule.setSupplies(supplies);
         schedule.setCategory(Category.valueOf(category.toUpperCase()));
@@ -428,6 +442,7 @@ public class ScheduleService {
         String location = (String) args.get("location");
         String memo = (String) args.get("memo");
         String category = (String) args.getOrDefault("category", "PERSONAL");
+        //String supplies = (String) args.getOrDefault("supplies", ""); // 준비물 파라미터 추가 -> 이건 물어봐야 하나?
 
         DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm");
         LocalDateTime startTime = LocalDateTime.parse(datetime, formatter);
@@ -498,10 +513,16 @@ public class ScheduleService {
             title,
             startTime,
             endTime,
+            "", // startLocation
+            0.0, // startX
+            0.0, // startY
             location,
+            0.0, // destinationX
+            0.0, // destinationY
             memo,
             null, // supplies는 null로 설정
             category
         );
     }
 }
+
