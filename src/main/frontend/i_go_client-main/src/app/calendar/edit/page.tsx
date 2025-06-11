@@ -5,6 +5,8 @@ import { getScheduleById, updateSchedule, deleteSchedule } from "@/api/scheduleA
 import { getRoutineNames } from "@/api/routineApi";
 import { useSearchParams, useRouter } from 'next/navigation';
 import ConfirmPopup from "@/components/common/ConfirmPopup";
+import AddressSearch from "@/components/common/AddressSearch";
+import KakaoMapScript from "@/components/common/KakaoMapScript";
 
 interface RoutineName {
   id: number;
@@ -34,7 +36,12 @@ export default function EditSchedule() {
     startTime: "",
     endDate: "",
     endTime: "",
+    startLocation: "",
+    startX: 0,
+    startY: 0,
     location: "",
+    destinationX: 0,
+    destinationY: 0,
     supplies: "",
     memo: "",
     category: "PERSONAL",
@@ -46,6 +53,8 @@ export default function EditSchedule() {
   const [touched, setTouched] = useState<Record<string, boolean>>({});
   const [showSubmitErrors, setShowSubmitErrors] = useState(false);
   const [isDeletePopupOpen, setIsDeletePopupOpen] = useState(false);
+  const [startLocationSelected, setStartLocationSelected] = useState(false);
+  const [destinationSelected, setDestinationSelected] = useState(false);
 
   // 시간 정보 파싱 함수
   const parseDateTime = (dateTimeStr: string) => {
@@ -182,10 +191,7 @@ export default function EditSchedule() {
 
           // 폼 데이터 설정
           const locationValue = scheduleData.location || "";
-          const isOnlineSchedule = locationValue.startsWith("[비대면]");
-          const cleanLocation = isOnlineSchedule
-              ? locationValue.replace("[비대면] ", "").replace("[비대면]", "")
-              : locationValue;
+          const isOnlineSchedule = locationValue === "비대면";
 
           setFormData({
             title: scheduleData.title || "",
@@ -193,12 +199,26 @@ export default function EditSchedule() {
             startTime,
             endDate,
             endTime,
-            location: cleanLocation,
+            startLocation: scheduleData.startLocation || "",
+            startX: scheduleData.startX || 0,
+            startY: scheduleData.startY || 0,
+            location: isOnlineSchedule ? "비대면" : (locationValue || ""),
+            destinationX: scheduleData.destinationX || 0,
+            destinationY: scheduleData.destinationY || 0,
             supplies: scheduleData.supplies || "",
             memo: scheduleData.memo || "",
             category: scheduleData.category || "PERSONAL",
             isOnline: isOnlineSchedule
           });
+
+          // 좌표가 있는 경우 주소 선택 완료 상태로 설정
+          if (scheduleData.startX && scheduleData.startY && !isOnlineSchedule) {
+            setStartLocationSelected(true);
+          }
+
+          if (scheduleData.destinationX && scheduleData.destinationY && !isOnlineSchedule) {
+            setDestinationSelected(true);
+          }
 
           // 루틴 ID 설정
           if (scheduleData.routineId) {
@@ -230,8 +250,20 @@ export default function EditSchedule() {
         ...prev,
         [name]: checked,
         // 체크박스가 체크되면 location을 '비대면'으로 설정, 아니면 빈 문자열로 초기화
-        location: checked ? '비대면' : ''
+        location: checked ? '비대면' : '',
+        // 온라인일 경우 출발지 정보도 초기화
+        startLocation: checked ? '' : prev.startLocation,
+        startX: checked ? 0 : prev.startX,
+        startY: checked ? 0 : prev.startY,
+        destinationX: checked ? 0 : prev.destinationX,
+        destinationY: checked ? 0 : prev.destinationY
       }));
+
+      // 주소 선택 상태도 초기화
+      if (checked) {
+        setStartLocationSelected(false);
+        setDestinationSelected(false);
+      }
     } else {
       setFormData(prev => ({
         ...prev,
@@ -240,6 +272,34 @@ export default function EditSchedule() {
     }
 
     handleFieldTouch(name);
+  };
+
+  // 출발지 주소 선택 핸들러
+  const handleStartAddressSelect = (address: string, x: number, y: number) => {
+    if (formData.isOnline) return; // 비대면인 경우 무시
+
+    console.log('선택된 출발지 주소:', address, '좌표:', x, y);
+    setFormData(prev => ({
+      ...prev,
+      startLocation: address,
+      startX: x,
+      startY: y
+    }));
+    setStartLocationSelected(true);
+  };
+
+  // 도착지 주소 선택 핸들러
+  const handleDestinationAddressSelect = (address: string, x: number, y: number) => {
+    if (formData.isOnline) return; // 비대면인 경우 무시
+
+    console.log('선택된 도착지 주소:', address, '좌표:', x, y);
+    setFormData(prev => ({
+      ...prev,
+      location: address,
+      destinationX: x,
+      destinationY: y
+    }));
+    setDestinationSelected(true);
   };
 
   // 로컬 시간을 그대로 유지하는 ISO 문자열 생성 함수
@@ -284,7 +344,12 @@ export default function EditSchedule() {
         title: formData.title,
         startTime: startDateTime,
         endTime: endDateTime,
+        startLocation: formData.isOnline ? "" : formData.startLocation,
+        startX: formData.isOnline ? 0 : formData.startX,
+        startY: formData.isOnline ? 0 : formData.startY,
         location: formData.isOnline ? "비대면" : formData.location,
+        destinationX: formData.isOnline ? 0 : formData.destinationX,
+        destinationY: formData.isOnline ? 0 : formData.destinationY,
         memo: formData.memo,
         supplies: formData.supplies,
         category: formData.category
@@ -356,6 +421,7 @@ export default function EditSchedule() {
   return (
       <div className="flex flex-col w-full h-full">
         <NavBar title="일정 수정" link="/calendar"></NavBar>
+        <KakaoMapScript /> {/* 명시적으로 컴포넌트 추가 */}
         <div className="w-full max-h-full overflow-y-auto">
           <div className="flex flex-col items-center justify-start p-[20px] w-full h-auto">
             <div className="w-full shadow-[0px_0px_10px_rgba(0,0,0,0.2)] bg-[#fff] p-[20px]">
@@ -455,20 +521,52 @@ export default function EditSchedule() {
                       )}
                     </div>
 
-                    {/* 장소 */}
+                    {/* 출발지 */}
                     <div className="relative">
                       <p className="text-[#383838] text-[13px] font-[500] tracking-[-0.4px] mb-[7px]">
-                        장소
+                        출발지
                       </p>
-                      <input
-                          type="text"
-                          name="location"
-                          value={formData.location}
-                          onChange={handleInputChange}
-                          placeholder="일정 장소를 입력해주세요."
+                      <div className="relative">
+                        <AddressSearch
+                          onAddressSelect={handleStartAddressSelect}
+                          placeholder="출발지 주소를 검색하세요."
                           disabled={formData.isOnline}
+                          defaultValue={formData.startLocation}
                           className={`text-[13px] text-[#383838] font-[400] tracking-[-0.4px] w-full border-[1px] border-[#DFDFDF] py-[8px] px-[15px] rounded-[4px] focus:border-[#383838] outline-none ${formData.isOnline ? 'bg-gray-100' : ''}`}
-                      />
+                        />
+                        {startLocationSelected && !formData.isOnline && (
+                          <div className="absolute right-3 top-1/2 transform -translate-y-1/2">
+                            <span className="text-green-600 text-sm">✓ 선택 완료</span>
+                          </div>
+                        )}
+                      </div>
+                      {/* 숨겨진 좌표 필드 */}
+                      <input type="hidden" name="startX" value={formData.startX} />
+                      <input type="hidden" name="startY" value={formData.startY} />
+                    </div>
+
+                    {/* 도착지 */}
+                    <div className="relative">
+                      <p className="text-[#383838] text-[13px] font-[500] tracking-[-0.4px] mb-[7px]">
+                        도착지
+                      </p>
+                      <div className="relative">
+                        <AddressSearch
+                          onAddressSelect={handleDestinationAddressSelect}
+                          placeholder="도착지 주소를 검색하세요."
+                          disabled={formData.isOnline}
+                          defaultValue={formData.isOnline ? "비대면" : formData.location}
+                          className={`text-[13px] text-[#383838] font-[400] tracking-[-0.4px] w-full border-[1px] border-[#DFDFDF] py-[8px] px-[15px] rounded-[4px] focus:border-[#383838] outline-none ${formData.isOnline ? 'bg-gray-100' : ''}`}
+                        />
+                        {destinationSelected && !formData.isOnline && (
+                          <div className="absolute right-3 top-1/2 transform -translate-y-1/2">
+                            <span className="text-green-600 text-sm">✓ 선택 완료</span>
+                          </div>
+                        )}
+                      </div>
+                      {/* 숨겨진 좌표 필드 */}
+                      <input type="hidden" name="destinationX" value={formData.destinationX} />
+                      <input type="hidden" name="destinationY" value={formData.destinationY} />
                     </div>
 
                     {/* 루틴 선택 */}
@@ -640,3 +738,4 @@ export default function EditSchedule() {
       </div>
   );
 }
+
