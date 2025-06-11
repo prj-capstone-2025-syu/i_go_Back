@@ -137,7 +137,7 @@ const AddressSearch: React.FC<AddressSearchProps> = ({
     const address = item.road_address_name || item.address_name;
     const x = parseFloat(item.x);
     const y = parseFloat(item.y);
-    setKeyword(address);
+    // setKeyword(address); 이 부분을 제거하여 입력창의 값을 유지
     onAddressSelect(address, x, y);
     setShowResults(false);
   };
