@@ -147,13 +147,24 @@ export default function EditSchedule() {
 
   // 제출 버튼 활성화 상태 확인
   const isFormValid = () => {
-    return formData.title.trim() !== '' &&
+    // 기본 폼 유효성 검사
+    const basicValidation = formData.title.trim() !== '' &&
         formData.startDate !== '' &&
         formData.startTime !== '' &&
         formData.endDate !== '' &&
         formData.endTime !== '' &&
         selectedRoutine !== '' &&
         Object.keys(errors).length === 0;
+
+    // 비대면 일정인 경우는 기본 검증만 진행
+    if (formData.isOnline) {
+      return basicValidation;
+    }
+
+    // 비대면이 아닌 경우, 출발지와 목적지가 모두 선택되었는지 확인
+    return basicValidation &&
+           startLocationSelected &&
+           destinationSelected;
   };
 
   const handleFieldTouch = (fieldName: string) => {
@@ -738,4 +749,3 @@ export default function EditSchedule() {
       </div>
   );
 }
-

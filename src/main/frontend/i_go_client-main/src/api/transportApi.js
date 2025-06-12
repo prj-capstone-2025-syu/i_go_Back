@@ -556,3 +556,4 @@ export const getCoordinateFromAddress = async (address) => {
         y: 37.5662952
     };
 };
+

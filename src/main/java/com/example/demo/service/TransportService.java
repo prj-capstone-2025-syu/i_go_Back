@@ -52,15 +52,21 @@ public class TransportService {
     public TransportTimeResponse calculateAllTransportTimes(TransportTimeRequest request) {
         // 입력값 검증
         if (request.getStartX() == null || request.getStartY() == null ||
-            request.getEndX() == null || request.getEndY() == null) {
+                request.getEndX() == null || request.getEndY() == null) {
             log.error("좌표값 누락: 모든 좌표(startX, startY, endX, endY)가 필요합니다");
+            return TransportTimeResponse.builder().build();
+        }
+
+        // 비대면 일정인 경우 API 호출을 하지 않고 null 반환 (프론트엔드에서 처리함)
+        if (request.isRemoteEvent()) {
+            log.info("비대면 일정은 이동시간 계산이 필요 없습니다.");
             return TransportTimeResponse.builder().build();
         }
 
         // 캐시 키 생성
         String cacheKey = String.format("%f_%f_%f_%f",
-                                       request.getStartX(), request.getStartY(),
-                                       request.getEndX(), request.getEndY());
+                request.getStartX(), request.getStartY(),
+                request.getEndX(), request.getEndY());
 
         // 캐시된 결과 확인
         CachedTransportResult cachedResult = transportTimeCache.get(cacheKey);
@@ -76,7 +82,7 @@ public class TransportService {
         // 교통수단별 소요시간 계산
         Integer walkingTime = calculateWalkingTime(request);
         Integer drivingTime = calculateDrivingTime(request);
-        Integer transitTime = calculateTransitTime(request);
+        Integer transitTime = getTransitTimeWithCache(request, cacheKey);
 
         // 결과 캐싱
         transportTimeCache.put(cacheKey, new CachedTransportResult(
@@ -94,6 +100,25 @@ public class TransportService {
      * 대중교통 이동시간만 별도 계산
      */
     public Integer calculateTransitTimeOnly(TransportTimeRequest request) {
+        // 캐시 키 생성
+        String cacheKey = String.format("%f_%f_%f_%f",
+                request.getStartX(), request.getStartY(),
+                request.getEndX(), request.getEndY());
+
+        return getTransitTimeWithCache(request, cacheKey);
+    }
+
+    /**
+     * 캐시를 고려한 대중교통 시간 조회 (중복 API 호출 방지)
+     */
+    private Integer getTransitTimeWithCache(TransportTimeRequest request, String cacheKey) {
+        // 캐시된 결과 확인
+        CachedTransportResult cachedResult = transportTimeCache.get(cacheKey);
+        if (cachedResult != null && !isCacheExpired(cachedResult) && cachedResult.getTransit() != null) {
+            log.info("캐시에서 대중교통 시간 정보 반환: {}", cacheKey);
+            return cachedResult.getTransit();
+        }
+
         // 일일 API 호출 제한 확인 및 리셋
         checkAndResetDailyCounter();
 
@@ -103,7 +128,7 @@ public class TransportService {
             return null;
         }
 
-        return calculateTransitTime(request);
+        return calculateTransitTime(request, cacheKey);
     }
 
     /**
@@ -135,7 +160,7 @@ public class TransportService {
 
             // API 키 디버깅 출력 (앞 4자리만 표시)
             String apiKeyPrefix = tmapAppKey != null && tmapAppKey.length() > 4
-                ? tmapAppKey.substring(0, 4) + "..." : "null";
+                    ? tmapAppKey.substring(0, 4) + "..." : "null";
             log.info("도보 API 요청 - API 키: {}", apiKeyPrefix);
 
             // MultiValueMap을 사용하여 form 데이터 형식으로 요청
@@ -158,7 +183,7 @@ public class TransportService {
             log.info("도보 API 호출 시작...");
             long startTime = System.currentTimeMillis();
             ResponseEntity<String> response = restTemplate.exchange(
-                url, HttpMethod.POST, entity, String.class);
+                    url, HttpMethod.POST, entity, String.class);
             long endTime = System.currentTimeMillis();
             log.info("도보 API 호출 완료: {}ms 소요", (endTime - startTime));
 
@@ -214,7 +239,7 @@ public class TransportService {
             HttpEntity<Map<String, Object>> entity = new HttpEntity<>(body, headers);
 
             ResponseEntity<String> response = restTemplate.exchange(
-                url, HttpMethod.POST, entity, String.class);
+                    url, HttpMethod.POST, entity, String.class);
 
             if (response.getStatusCode() == HttpStatus.OK) {
                 JsonNode root = objectMapper.readTree(response.getBody());
@@ -231,25 +256,7 @@ public class TransportService {
     /**
      * 대중교통 이동시간 계산 (TMAP Transit API)
      */
-    private Integer calculateTransitTime(TransportTimeRequest request) {
-        // 캐시 키 생성
-        String cacheKey = String.format("%f_%f_%f_%f",
-                request.getStartX(), request.getStartY(),
-                request.getEndX(), request.getEndY());
-
-        // 캐시된 결과 확인 - transit 시간만 필요한 경우
-        CachedTransportResult cachedResult = transportTimeCache.get(cacheKey);
-        if (cachedResult != null && !isCacheExpired(cachedResult) && cachedResult.getTransit() != null) {
-            log.info("캐시에서 대중교통 시간 정보 반환: {}", cacheKey);
-            return cachedResult.getTransit();
-        }
-
-        // API 호출 제한 확인
-        if (transitApiCallCounter >= TRANSIT_API_DAILY_LIMIT) {
-            log.warn("대중교통 API 일일 호출 제한에 도달했습니다 ({}회)", TRANSIT_API_DAILY_LIMIT);
-            return null;
-        }
-
+    private Integer calculateTransitTime(TransportTimeRequest request, String cacheKey) {
         try {
             String url = "https://apis.openapi.sk.com/transit/routes/sub";
 
@@ -268,12 +275,12 @@ public class TransportService {
 
             HttpEntity<Map<String, Object>> entity = new HttpEntity<>(body, headers);
 
-            // API 호출 카운터 증가
+            // API 호출 카운터 증가 (실제 API 호출 직전에 증가)
             transitApiCallCounter++;
             log.info("대중교통 API 호출 ({}번째/일일 제한 {}회)", transitApiCallCounter, TRANSIT_API_DAILY_LIMIT);
 
             ResponseEntity<String> response = restTemplate.exchange(
-                url, HttpMethod.POST, entity, String.class);
+                    url, HttpMethod.POST, entity, String.class);
 
             if (response.getStatusCode() == HttpStatus.OK) {
                 JsonNode root = objectMapper.readTree(response.getBody());
@@ -297,17 +304,8 @@ public class TransportService {
                 double totalTimeSeconds = metaData.path("plan").path("itineraries").get(0).path("totalTime").asDouble();
                 Integer transitTime = (int) Math.ceil(totalTimeSeconds / 60.0); // 초 -> 분 변환 및 올림
 
-                // 캐시에 transit 시간만 저장 (다른 값은 null로 설정)
-                if (!transportTimeCache.containsKey(cacheKey)) {
-                    transportTimeCache.put(cacheKey, new CachedTransportResult(
-                        null, null, transitTime, System.currentTimeMillis()
-                    ));
-                } else {
-                    // 기존 캐시에 다른 값이 있으면 transit만 업데이트
-                    transportTimeCache.computeIfPresent(cacheKey, (k, existing) -> new CachedTransportResult(
-                            existing.getWalking(), existing.getDriving(), transitTime, System.currentTimeMillis()
-                    ));
-                }
+                // 캐시 업데이트
+                updateTransitCache(cacheKey, transitTime);
 
                 return transitTime;
             }
@@ -316,6 +314,26 @@ public class TransportService {
         }
 
         return null;
+    }
+
+    /**
+     * 대중교통 시간 캐시 업데이트
+     */
+    private void updateTransitCache(String cacheKey, Integer transitTime) {
+        transportTimeCache.compute(cacheKey, (k, existing) -> {
+            if (existing == null) {
+                // 새로운 캐시 엔트리 생성 (다른 값은 null)
+                return new CachedTransportResult(null, null, transitTime, System.currentTimeMillis());
+            } else {
+                // 기존 캐시에 transit 시간만 업데이트
+                return new CachedTransportResult(
+                        existing.getWalking(),
+                        existing.getDriving(),
+                        transitTime,
+                        System.currentTimeMillis()
+                );
+            }
+        });
     }
 
     /**

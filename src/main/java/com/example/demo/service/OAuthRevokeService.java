@@ -18,12 +18,6 @@ public class OAuthRevokeService {
     private static final Logger logger = Logger.getLogger(OAuthRevokeService.class.getName());
     private final RestTemplate restTemplate = new RestTemplate();
 
-    /**
-     * Google OAuth 액세스 토큰을 취소합니다.
-     *
-     * @param accessToken 취소할 Google 액세스 토큰
-     * @return 취소 성공 여부
-     */
     public boolean revokeGoogleToken(String accessToken) {
         if (accessToken == null || accessToken.isEmpty()) {
             logger.warning("액세스 토큰이 비어있어 취소할 수 없습니다.");

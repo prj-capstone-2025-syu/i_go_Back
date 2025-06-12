@@ -5,20 +5,42 @@ import FullCalendar from "@fullcalendar/react";
 import dayGridPlugin from "@fullcalendar/daygrid";
 import listPlugin from "@fullcalendar/list";
 import koLocale from "@fullcalendar/core/locales/ko";
+import { EventClickArg, EventInput } from '@fullcalendar/core'; // EventClickArg 및 EventInput 추가
 import { getSchedules } from "@/api/scheduleApi";
 import { useNotification } from "@/components/common/NotificationContext";{/*버튼주석*/}
 
+// 선택된 이벤트의 타입 정의
+interface SelectedEventType {
+  id: string;
+  title: string;
+  start: Date | null;
+  end: Date | null;
+}
+
+// API로부터 받는 스케줄 데이터의 타입 정의
+interface ApiScheduleType {
+  id: any; // API 응답에 따라 string 또는 number 일 수 있으므로, 변환 시 String() 처리
+  title: string;
+  startTime: string;
+  endTime: string;
+  category: string;
+  location: string | null;
+  memo: string | null;
+  routineId: number | null;
+}
+
 export default function Calendar() {
-  const [events, setEvents] = useState([]);
+  const [events, setEvents] = useState<EventInput[]>([]); // FullCalendar 이벤트 타입 사용
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState(null);
-  const [selectedEvent, setSelectedEvent] = useState(null);
+  const [error, setError] = useState<Error | null>(null); // 에러 상태 타입 명시
+  const [selectedEvent, setSelectedEvent] = useState<SelectedEventType | null>(null); // selectedEvent 타입 명시
   const { routineNotificationOpen } = useNotification();{/*버튼주석*/}
 
   // 일정 데이터 가져오기
   const fetchSchedules = async () => {
     try {
       setLoading(true);
+      setError(null); // 조회 시작 시 에러 초기화
 
       // 현재 날짜 기준으로 3개월 범위의 일정 조회
       const now = new Date();
@@ -33,15 +55,15 @@ export default function Calendar() {
       console.log("조회 종료:", endISO);
 
       // API 호출
-      const schedules = await getSchedules(startISO, endISO);
+      const schedules: ApiScheduleType[] = await getSchedules(startISO, endISO); // ApiScheduleType 사용
       console.log("가져온 일정:", schedules);
 
       if (schedules && schedules.length > 0) {
         // 백엔드 데이터를 FullCalendar 이벤트 형식으로 변환
-        const formattedEvents = schedules.map((schedule: { id: any; title: any; startTime: any; endTime: any; category: any; location: any; memo: any; routineId: any; }) => ({
-          id: schedule.id,
+        const formattedEvents: EventInput[] = schedules.map((schedule: ApiScheduleType) => ({ // ApiScheduleType 사용
+          id: String(schedule.id), // FullCalendar는 id를 string으로 기대
           title: schedule.title,
-          start: schedule.startTime,
+          start: schedule.startTime, // FullCalendar가 ISO 문자열 파싱 가능
           end: schedule.endTime,
           color: getCategoryColor(schedule.category),
           extendedProps: {
@@ -52,16 +74,19 @@ export default function Calendar() {
           }
         }));
         setEvents(formattedEvents);
+      } else {
+        setEvents([]); // 데이터가 없을 경우 빈 배열로 설정
       }
-    } catch (err) {
+    } catch (err: any) { // 에러 타입 명시적 처리
       console.error("일정 가져오기 오류:", err);
+      setError(err instanceof Error ? err : new Error(String(err)));
     } finally {
       setLoading(false);
     }
   };
 
   // 카테고리별 색상 반환
-  const getCategoryColor = (category: any) => {
+  const getCategoryColor = (category: string) => { // category 타입 string으로 명시
     switch (category) {
       case "DAILY": return "#4285F4";
       case "WORK": return "#0F9D58";
@@ -72,7 +97,7 @@ export default function Calendar() {
   };
 
   // 이벤트 클릭 핸들러
-  const handleEventClick = (info: { event: { id: any; title: any; start: any; end: any; }; }) => {
+  const handleEventClick = (info: EventClickArg) => { // EventClickArg 타입 사용
     console.log("선택된 이벤트:", info.event);
     // 이벤트 정보 저장
     setSelectedEvent({

@@ -25,6 +25,11 @@ interface ScheduleType {
   category: string;
   routineId: number | null;
   status: 'PENDING' | 'IN_PROGRESS' | 'COMPLETED';
+  startX?: number | null; // 출발지 X 좌표 추가
+  startY?: number | null; // 출발지 Y 좌표 추가
+  destinationX?: number | null; // 목적지 X 좌표 추가
+  destinationY?: number | null; // 목적지 Y 좌표 추가
+  startLocation?: string | null; // 출발지 명칭 추가
 }
 
 interface RoutineInfo {
@@ -149,6 +154,8 @@ const Home: FC = () => {
   const [isTransportLoading, setIsTransportLoading] = useState(false);
   // 이동시간 애니메이션을 위한 상태
   const [showTransportTimes, setShowTransportTimes] = useState(false);
+  // 비대면 일정 여부 확인을 위한 상태 추가
+  const [isRemoteEvent, setIsRemoteEvent] = useState(false);
 
   // 1분마다 자동 리프레시를 위한 상태
   const [refreshToken, setRefreshToken] = useState(0);
@@ -233,13 +240,13 @@ const Home: FC = () => {
       ])
           .then(([upcomingData, inProgressData]) => {
             // 다가오는 일정 설정
-            const sortedSchedules = (upcomingData || []).sort((a, b) =>
+            const sortedSchedules = (upcomingData || []).sort((a: ScheduleType, b: ScheduleType) =>
                 new Date(a.startTime).getTime() - new Date(b.startTime).getTime()
             );
             setUpcomingSchedules(sortedSchedules);
 
             // 가장 가까운 일정 설정 (진행 중인 일정이 아닌 것 중에서)
-            const nearestUpcoming = sortedSchedules.find((schedule: { status: string; startTime: string | number | Date; }) =>
+            const nearestUpcoming = sortedSchedules.find((schedule: ScheduleType) =>
                 schedule.status !== 'IN_PROGRESS' && new Date(schedule.startTime) > new Date()
             ) || null;
             setNearestSchedule(nearestUpcoming);
@@ -276,7 +283,7 @@ const Home: FC = () => {
 
       // 다가오는 일정도 새로 가져와서 업데이트
       const upcomingData = await getUpcomingSchedules(3);
-      const sortedSchedules = (upcomingData || []).sort((a, b) =>
+      const sortedSchedules = (upcomingData || []).sort((a: ScheduleType, b: ScheduleType) =>
           new Date(a.startTime).getTime() - new Date(b.startTime).getTime()
       );
       setUpcomingSchedules(sortedSchedules);
@@ -396,6 +403,18 @@ const Home: FC = () => {
     if (currentSchedule) {
       // 애니메이션 초기 상태 설정
       setShowTransportTimes(false);
+
+      // 비대면 일정인지 확인
+      if (currentSchedule.location?.toLowerCase() === '비대면') {
+        // 비대면 일정으로 설정
+        setIsRemoteEvent(true);
+        console.log('🚦 [DEBUG] 비대면 일정 확인됨', currentSchedule.title);
+        setIsTransportLoading(false);
+        return;
+      } else {
+        // 대면 일정으로 설정
+        setIsRemoteEvent(false);
+      }
 
       // 출발지와 목적지 좌표가 있는지 확인
       const hasStartCoords = currentSchedule.startX != null && currentSchedule.startY != null;
@@ -533,7 +552,13 @@ const Home: FC = () => {
   // 이동 시간 포맷팅 함수 추가
   const formatTransportTime = (minutes: number | null): string => {
     if (minutes === null) return "-";
-    return `${minutes}분`;
+    if (minutes < 60) {
+      return `${minutes}분`;
+    } else {
+      const hours = Math.floor(minutes / 60);
+      const mins = minutes % 60;
+      return `${hours}시간 ${mins > 0 ? mins + '분' : ''}`;
+    }
   };
 
   // 날짜 포맷팅 함수
@@ -689,164 +714,177 @@ const Home: FC = () => {
                         <p className="text-[#383838] text-[16px] font-[500] tracking-[-0.8px] leading-[155%] line-clamp-1 mb-[7px]">
                           실시간 예상 소요시간
                         </p>
-                        <div className=" grid grid-cols-3">
-                          <div className="h-auto flex gap-x-[5px] items-center justify-center">
-                            <svg
-                                width="22"
-                                height="22"
-                                viewBox="0 0 22 22"
-                                fill="none"
-                                xmlns="http://www.w3.org/2000/svg"
-                            >
-                              <rect width="22" height="22" fill="url(#pattern0_298_2791)" />
-                              <defs>
-                                <pattern
-                                    id="pattern0_298_2791"
-                                    patternContentUnits="objectBoundingBox"
-                                    width="1"
-                                    height="1"
-                                >
-                                  <use
-                                      xlinkHref="#image0_298_2791"
-                                      transform="scale(0.00195312)"
-                                  />
-                                </pattern>
-                                <image
-                                    id="image0_298_2791"
-                                    width="512"
-                                    height="512"
-                                    preserveAspectRatio="none"
-                                    xlinkHref=""
-                                />
-                              </defs>
-                            </svg>
-
-                            <p className={`group-hover:!text-[#fff] text-[#01274F] text-[14px] font-[500] tracking-[-0.8px] leading-[110%] transition-opacity duration-500 ${showTransportTimes ? 'opacity-100' : 'opacity-0'}`}>
-                              {!isTransportLoading && transportTimes.driving !== null ? formatTransportTime(transportTimes.driving) : ""}
+                        {isRemoteEvent ? (
+                          // 비대면 일정일 경우 메시지 표시
+                          <div className="flex items-center justify-center py-3 px-4 bg-gray-50 rounded-md">
+                            <span className="text-blue-600 mr-2 text-lg">💻</span>
+                            <p className="text-[#383838] text-[15px] font-medium">
+                              비대면 일정입니다. 이동시간이 필요하지 않습니다.
                             </p>
-                            {isTransportLoading && (
-                                <span className="inline-block w-5 h-5 border-2 border-t-transparent border-[#01274F] rounded-full animate-spin"></span>
-                            )}
                           </div>
-                          <div className="h-auto flex gap-x-[5px] items-center justify-center">
-                            <svg
-                                width="22"
-                                height="22"
-                                viewBox="0 0 22 22"
-                                fill="none"
-                                xmlns="http://www.w3.org/2000/svg"
-                            >
-                              <rect width="22" height="22" fill="url(#pattern0_298_2792)" />
-                              <defs>
-                                <pattern
-                                    id="pattern0_298_2792"
-                                    patternContentUnits="objectBoundingBox"
-                                    width="1"
-                                    height="1"
+                        ) : (
+                          // 대면 일정일 경우 이동시간 표시
+                          <>
+                            <div className="grid grid-cols-3">
+                              <div className="h-auto flex gap-x-[5px] items-center justify-center">
+                                <svg
+                                    width="22"
+                                    height="22"
+                                    viewBox="0 0 22 22"
+                                    fill="none"
+                                    xmlns="http://www.w3.org/2000/svg"
                                 >
-                                  <use
-                                      xlinkHref="#image0_298_2792"
-                                      transform="scale(0.00195312)"
-                                  />
-                                </pattern>
-                                <image
-                                    id="image0_298_2792"
-                                    width="512"
-                                    height="512"
-                                    preserveAspectRatio="none"
-                                    xlinkHref=""
-                                />
-                              </defs>
-                            </svg>
+                                  <rect width="22" height="22" fill="url(#pattern0_298_2791)" />
+                                  <defs>
+                                    <pattern
+                                        id="pattern0_298_2791"
+                                        patternContentUnits="objectBoundingBox"
+                                        width="1"
+                                        height="1"
+                                    >
+                                      <use
+                                          xlinkHref="#image0_298_2791"
+                                          transform="scale(0.00195312)"
+                                      />
+                                    </pattern>
+                                    <image
+                                        id="image0_298_2791"
+                                        width="512"
+                                        height="512"
+                                        preserveAspectRatio="none"
+                                        xlinkHref=""
+                                    />
+                                  </defs>
+                                </svg>
 
-                            <p className={`group-hover:!text-[#fff] text-[#01274F] text-[14px] font-[500] tracking-[-0.8px] leading-[110%] transition-opacity duration-500 ${showTransportTimes ? 'opacity-100' : 'opacity-0'}`}>
-                              {!isTransportLoading && transportTimes.transit !== null ? formatTransportTime(transportTimes.transit) : ""}
-                            </p>
-                            {isTransportLoading && (
-                                <span className="inline-block w-5 h-5 border-2 border-t-transparent border-[#01274F] rounded-full animate-spin"></span>
-                            )}
-                          </div>
-                          <div className="h-auto flex gap-x-[5px] items-center justify-center">
-                            <svg
-                                width="22"
-                                height="22"
-                                viewBox="0 0 22 22"
-                                fill="none"
-                                xmlns="http://www.w3.org/2000/svg"
-                            >
-                              <rect width="22" height="22" fill="url(#pattern0_298_2793)" />
-                              <defs>
-                                <pattern
-                                    id="pattern0_298_2793"
-                                    patternContentUnits="objectBoundingBox"
-                                    width="1"
-                                    height="1"
+                                <p className={`group-hover:!text-[#fff] text-[#01274F] text-[14px] font-[500] tracking-[-0.8px] leading-[110%] transition-opacity duration-500 ${showTransportTimes ? 'opacity-100' : 'opacity-0'}`}>
+                                  {!isTransportLoading && transportTimes.driving !== null ? formatTransportTime(transportTimes.driving) : ""}
+                                </p>
+                                {isTransportLoading && (
+                                    <span className="inline-block w-5 h-5 border-2 border-t-transparent border-[#01274F] rounded-full animate-spin"></span>
+                                )}
+                              </div>
+                              <div className="h-auto flex gap-x-[5px] items-center justify-center">
+                                <svg
+                                    width="22"
+                                    height="22"
+                                    viewBox="0 0 22 22"
+                                    fill="none"
+                                    xmlns="http://www.w3.org/2000/svg"
                                 >
-                                  <use
-                                      xlinkHref="#image0_298_2793"
-                                      transform="scale(0.00195312)"
-                                  />
-                                </pattern>
-                                <image
-                                    id="image0_298_2793"
-                                    width="512"
-                                    height="512"
-                                    preserveAspectRatio="none"
-                                    xlinkHref=""
-                                />
-                              </defs>
-                            </svg>
+                                  <rect width="22" height="22" fill="url(#pattern0_298_2792)" />
+                                  <defs>
+                                    <pattern
+                                        id="pattern0_298_2792"
+                                        patternContentUnits="objectBoundingBox"
+                                        width="1"
+                                        height="1"
+                                    >
+                                      <use
+                                          xlinkHref="#image0_298_2792"
+                                          transform="scale(0.00195312)"
+                                      />
+                                    </pattern>
+                                    <image
+                                        id="image0_298_2792"
+                                        width="512"
+                                        height="512"
+                                        preserveAspectRatio="none"
+                                        xlinkHref=""
+                                    />
+                                  </defs>
+                                </svg>
 
-                            <p className={`group-hover:!text-[#fff] text-[#01274F] text-[14px] font-[500] tracking-[-0.8px] leading-[110%] transition-opacity duration-500 ${showTransportTimes ? 'opacity-100' : 'opacity-0'}`}>
-                              {!isTransportLoading && transportTimes.walking !== null ? formatTransportTime(transportTimes.walking) : ""}
-                            </p>
-                            {isTransportLoading && (
-                                <span className="inline-block w-5 h-5 border-2 border-t-transparent border-[#01274F] rounded-full animate-spin"></span>
-                            )}
-                          </div>
-                        </div>
-                        <Link
-                            href={generateTmapDirectionLink(currentSchedule)}
-                            target="_blank"
-                            className="px-[5px] py-[10px] border-[#dfdfdf] border-[1px] rounded-[5px] hover:opacity-[0.7] w-full flex items-center justify-center gap-x-[5px] mt-[10px]"
-                        >
-                          <svg
-                              width="22"
-                              height="22"
-                              viewBox="0 0 22 22"
-                              fill="none"
-                              xmlns="http://www.w3.org/2000/svg"
-                          >
-                            <rect
-                                width="22"
-                                height="22"
-                                fill="url(#pattern0_298_2746dafasdfa)"
-                            />
-                            <defs>
-                              <pattern
-                                  id="pattern0_298_2746dafasdfa"
-                                  patternContentUnits="objectBoundingBox"
-                                  width="1"
-                                  height="1"
+                                <p className={`group-hover:!text-[#fff] text-[#01274F] text-[14px] font-[500] tracking-[-0.8px] leading-[110%] transition-opacity duration-500 ${showTransportTimes ? 'opacity-100' : 'opacity-0'}`}>
+                                  {!isTransportLoading && transportTimes.transit !== null ? formatTransportTime(transportTimes.transit) : ""}
+                                </p>
+                                {isTransportLoading && (
+                                    <span className="inline-block w-5 h-5 border-2 border-t-transparent border-[#01274F] rounded-full animate-spin"></span>
+                                )}
+                              </div>
+                              <div className="h-auto flex gap-x-[5px] items-center justify-center">
+                                <svg
+                                    width="22"
+                                    height="22"
+                                    viewBox="0 0 22 22"
+                                    fill="none"
+                                    xmlns="http://www.w3.org/2000/svg"
+                                >
+                                  <rect width="22" height="22" fill="url(#pattern0_298_2793)" />
+                                  <defs>
+                                    <pattern
+                                        id="pattern0_298_2793"
+                                        patternContentUnits="objectBoundingBox"
+                                        width="1"
+                                        height="1"
+                                    >
+                                      <use
+                                          xlinkHref="#image0_298_2793"
+                                          transform="scale(0.00195312)"
+                                      />
+                                    </pattern>
+                                    <image
+                                        id="image0_298_2793"
+                                        width="512"
+                                        height="512"
+                                        preserveAspectRatio="none"
+                                        xlinkHref=""
+                                    />
+                                  </defs>
+                                </svg>
+
+                                <p className={`group-hover:!text-[#fff] text-[#01274F] text-[14px] font-[500] tracking-[-0.8px] leading-[110%] transition-opacity duration-500 ${showTransportTimes ? 'opacity-100' : 'opacity-0'}`}>
+                                  {!isTransportLoading && transportTimes.walking !== null ? formatTransportTime(transportTimes.walking) : ""}
+                                </p>
+                                {isTransportLoading && (
+                                    <span className="inline-block w-5 h-5 border-2 border-t-transparent border-[#01274F] rounded-full animate-spin"></span>
+                                )}
+                              </div>
+                            </div>
+                            <Link
+                                href={generateTmapDirectionLink(currentSchedule)}
+                                target="_blank"
+                                className="px-[5px] py-[10px] border-[#dfdfdf] border-[1px] rounded-[5px] hover:opacity-[0.7] w-full flex items-center justify-center gap-x-[5px] mt-[10px]"
+                            >
+                              <svg
+                                  width="22"
+                                  height="22"
+                                  viewBox="0 0 22 22"
+                                  fill="none"
+                                  xmlns="http://www.w3.org/2000/svg"
                               >
-                                <use
-                                    xlinkHref="#image0_298_2746"
-                                    transform="translate(-3.68301 -1.77451) scale(0.00326797)"
+                                <rect
+                                    width="22"
+                                    height="22"
+                                    fill="url(#pattern0_298_2746dafasdfa)"
                                 />
-                              </pattern>
-                              <image
-                                  id="image0_298_2746"
-                                  width="2560"
-                                  height="1440"
-                                  preserveAspectRatio="none"
-                                  xlinkHref=""
-                              />
-                            </defs>
-                          </svg>
-                          <p className="text-[#383838] text-[14px] tracking-[-0.2px] font-[400]">
-                            TMAP 빠른 길찾기
-                          </p>
-                        </Link>
+                                <defs>
+                                  <pattern
+                                      id="pattern0_298_2746dafasdfa"
+                                      patternContentUnits="objectBoundingBox"
+                                      width="1"
+                                      height="1"
+                                  >
+                                    <use
+                                        xlinkHref="#image0_298_2746"
+                                        transform="translate(-3.68301 -1.77451) scale(0.00326797)"
+                                    />
+                                  </pattern>
+                                  <image
+                                      id="image0_298_2746"
+                                      width="2560"
+                                      height="1440"
+                                      preserveAspectRatio="none"
+                                      xlinkHref=""
+                                  />
+                                </defs>
+                              </svg>
+                              <p className="text-[#383838] text-[14px] tracking-[-0.2px] font-[400]">
+                                TMAP 빠른 길찾기
+                              </p>
+                            </Link>
+                          </>
+                        )}
                         <div className="mt-[20px] mb-[13px] w-full h-[1px] bg-[#dfdfdf]"></div>
                         <div className="flex justify-between items-center w-full mb-[8px]">
                           <p className="text-[#383838] text-[17px] font-[600] tracking-[-0.4px] leading-[110%] line-clamp-1">

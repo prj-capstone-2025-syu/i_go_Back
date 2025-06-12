@@ -12,4 +12,5 @@ public class TransportTimeRequest {
     private Double startY;
     private Double endX;
     private Double endY;
+    private boolean isRemoteEvent; // 비대면 일정 여부 추가
 }
