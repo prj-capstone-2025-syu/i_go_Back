@@ -232,6 +232,18 @@ public class TransportService {
      * 대중교통 이동시간 계산 (TMAP Transit API)
      */
     private Integer calculateTransitTime(TransportTimeRequest request) {
+        // 캐시 키 생성
+        String cacheKey = String.format("%f_%f_%f_%f",
+                request.getStartX(), request.getStartY(),
+                request.getEndX(), request.getEndY());
+
+        // 캐시된 결과 확인 - transit 시간만 필요한 경우
+        CachedTransportResult cachedResult = transportTimeCache.get(cacheKey);
+        if (cachedResult != null && !isCacheExpired(cachedResult) && cachedResult.getTransit() != null) {
+            log.info("캐시에서 대중교통 시간 정보 반환: {}", cacheKey);
+            return cachedResult.getTransit();
+        }
+
         // API 호출 제한 확인
         if (transitApiCallCounter >= TRANSIT_API_DAILY_LIMIT) {
             log.warn("대중교통 API 일일 호출 제한에 도달했습니다 ({}회)", TRANSIT_API_DAILY_LIMIT);
@@ -283,7 +295,21 @@ public class TransportService {
 
                 // 정상 응답 처리
                 double totalTimeSeconds = metaData.path("plan").path("itineraries").get(0).path("totalTime").asDouble();
-                return (int) Math.ceil(totalTimeSeconds / 60.0); // 초 -> 분 변환 및 올림
+                Integer transitTime = (int) Math.ceil(totalTimeSeconds / 60.0); // 초 -> 분 변환 및 올림
+
+                // 캐시에 transit 시간만 저장 (다른 값은 null로 설정)
+                if (!transportTimeCache.containsKey(cacheKey)) {
+                    transportTimeCache.put(cacheKey, new CachedTransportResult(
+                        null, null, transitTime, System.currentTimeMillis()
+                    ));
+                } else {
+                    // 기존 캐시에 다른 값이 있으면 transit만 업데이트
+                    transportTimeCache.computeIfPresent(cacheKey, (k, existing) -> new CachedTransportResult(
+                            existing.getWalking(), existing.getDriving(), transitTime, System.currentTimeMillis()
+                    ));
+                }
+
+                return transitTime;
             }
         } catch (Exception e) {
             log.error("대중교통 이동시간 계산 실패: {}", e.getMessage(), e);

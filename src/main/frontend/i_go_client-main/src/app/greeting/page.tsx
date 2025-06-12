@@ -256,7 +256,7 @@ const ChatInterface = () => {
     setIsFlowRunning(true);
     disablePreviousActions();
 
-    addMessage("설명이 필요해 🥲", currentUser);
+    addMessage("설명이 필요해 😂", currentUser);
 
     await sleep(1000);
     addMessage(
