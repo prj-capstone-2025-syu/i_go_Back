@@ -1,11 +1,11 @@
-package com.example.demo.dto.Schedule;
+package com.example.demo.dto.schedule;
 
 import lombok.Data;
 
 import java.time.LocalDateTime;
 
 @Data
-public class CreateScheduleRequest {
+public class UpdateScheduleRequest {
     private Long routineId;
     private String title;
     private LocalDateTime startTime;

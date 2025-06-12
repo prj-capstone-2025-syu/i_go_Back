@@ -1,8 +1,8 @@
 package com.example.demo.service;
 
-import com.example.demo.dto.Chat.ChatRequest;
-import com.example.demo.dto.Chat.ChatResponse;
-import com.example.demo.dto.Schedule.CreateScheduleRequest;
+import com.example.demo.dto.chat.ChatRequest;
+import com.example.demo.dto.chat.ChatResponse;
+import com.example.demo.dto.schedule.CreateScheduleRequest;
 import com.example.demo.entity.schedule.Schedule;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;

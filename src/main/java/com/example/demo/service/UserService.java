@@ -3,7 +3,7 @@ package com.example.demo.service;
 import com.example.demo.entity.user.User;
 import com.example.demo.entity.user.UserStatus;
 import com.example.demo.repository.*;
-import com.example.demo.dto.NotificationSettingsDto;
+import com.example.demo.dto.notification.NotificationSettingsDto;
 import jakarta.persistence.EntityNotFoundException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;

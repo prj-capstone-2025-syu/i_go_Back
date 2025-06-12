@@ -1,7 +1,7 @@
-package com.example.demo.Controller;
+package com.example.demo.controller;
 
-import com.example.demo.dto.Chat.ChatRequest;
-import com.example.demo.dto.Chat.ChatResponse;
+import com.example.demo.dto.chat.ChatRequest;
+import com.example.demo.dto.chat.ChatResponse;
 import com.example.demo.entity.entityInterface.AppUser;
 import com.example.demo.service.ChatService;
 import lombok.RequiredArgsConstructor;

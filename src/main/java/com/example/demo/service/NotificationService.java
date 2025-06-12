@@ -1,6 +1,6 @@
 package com.example.demo.service;
 
-import com.example.demo.dto.NotificationDto;
+import com.example.demo.dto.notification.NotificationDto;
 import com.example.demo.entity.fcm.Notification;
 import com.example.demo.entity.user.User;
 import com.example.demo.repository.NotificationRepository;

@@ -1,7 +1,7 @@
-package com.example.demo.Controller;
+package com.example.demo.controller;
 
-import com.example.demo.dto.FcmTokenRequest;
-import com.example.demo.dto.NotificationSettingsDto;
+import com.example.demo.dto.token.FcmTokenRequest;
+import com.example.demo.dto.notification.NotificationSettingsDto;
 import com.example.demo.entity.user.User;
 import com.example.demo.dto.UserUpdateRequestDto;
 import com.example.demo.entity.entityInterface.AppUser;

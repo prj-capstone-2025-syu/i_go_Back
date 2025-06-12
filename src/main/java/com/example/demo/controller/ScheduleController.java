@@ -1,7 +1,7 @@
-package com.example.demo.Controller;
+package com.example.demo.controller;
 
-import com.example.demo.dto.Schedule.CreateScheduleRequest;
-import com.example.demo.dto.Schedule.UpdateScheduleRequest;
+import com.example.demo.dto.schedule.CreateScheduleRequest;
+import com.example.demo.dto.schedule.UpdateScheduleRequest;
 import com.example.demo.entity.entityInterface.AppUser;
 import com.example.demo.entity.schedule.Schedule;
 import com.example.demo.service.ScheduleService;
