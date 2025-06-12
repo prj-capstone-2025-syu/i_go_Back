@@ -223,9 +223,6 @@ interface ChatHeaderProps {
   participant?: User;
   lastSeen?: string;
   onBack?: () => void;
-  onSearch?: () => void;
-  onMenuToggle?: () => void;
-  isMenuOpen?: boolean;
 }
 
 const ChatHeader: React.FC<ChatHeaderProps> = ({
@@ -234,9 +231,6 @@ const ChatHeader: React.FC<ChatHeaderProps> = ({
   participant,
   lastSeen,
   onBack,
-  onSearch,
-  onMenuToggle,
-  isMenuOpen,
 }) => {
   const displayName = groupName || participant?.name || "Chat";
   const avatarUrl =
@@ -263,7 +257,7 @@ const ChatHeader: React.FC<ChatHeaderProps> = ({
             {" "}
             {/* mr-5에서 mr-3으로 수정 */}
             <div
-              className="w-[2.25rem] h-[2.25rem] rounded-full bg-cover bg-center border border-gray-200"
+              className="w-[2.25rem] h-[2.25rem] rounded-full bg-contain bg-center bg-[#fff] bg-no-repeat border border-gray-200"
               style={{ backgroundImage: `url("${avatarUrl}")` }}
             ></div>{" "}
             {/* 테두리 추가 */}
@@ -286,30 +280,6 @@ const ChatHeader: React.FC<ChatHeaderProps> = ({
               </p>
             )}{" "}
             {/* 스타일 조정 */}
-          </div>
-        </div>
-        <div className="flex">
-          <button
-            onClick={onSearch}
-            className="group flex justify-center items-center rounded-full outline-none focus:outline-none hover:bg-gray-100 focus:bg-gray-100 transition-all duration-200 w-7 h-7 mr-3"
-            title="Search messages"
-            aria-label="Search messages"
-          >
-            <SearchIcon className="w-[1.25rem] h-[1.25rem] text-gray-400 group-hover:text-indigo-500" />
-          </button>
-          <div className="relative">
-            <button
-              onClick={onMenuToggle}
-              className="group flex justify-center items-center rounded-full outline-none focus:outline-none hover:bg-gray-100 focus:bg-gray-100 transition-all duration-200 w-7 h-7"
-              id="open-conversation-menu"
-              tabIndex={0}
-              aria-expanded={isMenuOpen}
-              aria-controls="conversation-menu"
-              title="Toggle conversation menu"
-              aria-label="Toggle conversation menu"
-            >
-              <DotsVerticalIcon className="w-[1.25rem] h-[1.25rem] text-gray-400 group-hover:text-indigo-500" />
-            </button>
           </div>
         </div>
       </div>
@@ -410,7 +380,7 @@ const MessageItem: React.FC<MessageItemProps> = ({ message }) => {
         <div className="mr-[10px] self-end shrink-0">
           <div aria-label={message.sender.name} className="outline-none">
             <div
-              className="w-[36px] h-[36px] bg-cover bg-center rounded-full border border-gray-200"
+              className="w-[36px] h-[36px] bg-contain bg-center bg-[#fff] bg-no-repeat rounded-full border border-gray-200"
               style={{
                 backgroundImage: `url("${
                   message.sender.avatarUrl || "https://via.placeholder.com/150"
@@ -486,7 +456,6 @@ interface MessageInputProps {
 }
 const MessageInput: React.FC<MessageInputProps> = ({ onSendMessage }) => {
   const [messageText, setMessageText] = useState("");
-  const [isEmojiPickerOpen, setIsEmojiPickerOpen] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const adjustTextareaHeight = () => {
@@ -530,23 +499,11 @@ const MessageInput: React.FC<MessageInputProps> = ({ onSendMessage }) => {
 
   return (
     <div className="w-full border-t !border-[#DFDFDF] bg-white p-[15px]">
-      {" "}
-      {/* 배경색, 테두리, 패딩 수정 */}
       <div className="flex items-end space-x-3">
-        {" "}
-        {/* space-x 로 간격 조정 */}
-        <button
-          className="p-2 text-gray-500 hover:text-indigo-600 focus:outline-none"
-          title="Open select attachments modal"
-          aria-label="Open select attachments modal"
-          onClick={() => alert("Attach file clicked (implement modal)")}
-        >
-          <AttachmentIcon className="w-5 h-5" />
-        </button>
         <div className="relative grow">
           <textarea
             ref={textareaRef}
-            className="w-full px-4 py-2.5 rounded-lg content-center outline-none text-sm placeholder:text-[#949494] text-[#383838] bg-[#F9F9F9] border border-[#F0F0F0] focus:border-[#01274F] focus:ring-1 focus:ring-[#01274F] max-h-[10rem] pr-10 resize-none scrollbar-hidden transition-colors duration-200"
+            className="w-full px-4 py-2.5 rounded-lg content-center outline-none text-sm placeholder:text-[#949494] text-[#383838] bg-[#F9F9F9] border border-[#F0F0F0] focus:border-[#01274F] focus:ring-1 focus:ring-[#01274F] max-h-[10rem] resize-none scrollbar-hidden transition-colors duration-200"
             value={messageText}
             onChange={handleInputChange}
             onKeyPress={handleKeyPress}
@@ -555,34 +512,7 @@ const MessageInput: React.FC<MessageInputProps> = ({ onSendMessage }) => {
             aria-label="무엇을 도와드릴까요?"
             style={{ overflowY: "hidden" }} // 초기 스크롤바 숨김
           ></textarea>
-          <div className="absolute bottom-2.5 right-2">
-            {" "}
-            {/* 위치 조정 */}
-            <button
-              onClick={() => setIsEmojiPickerOpen(!isEmojiPickerOpen)}
-              className="p-1 text-gray-400 hover:text-indigo-500 focus:outline-none"
-              title="Toggle emoji picker"
-              aria-label="Toggle emoji picker"
-            >
-              <EmojiIcon className="w-5 h-5" />
-            </button>
-            {isEmojiPickerOpen && (
-              <div className="absolute z-10 bottom-[calc(100%+0.5rem)] right-0 mt-2 bg-white shadow-lg rounded-md border border-gray-200 p-2">
-                <p className="text-xs text-gray-500">
-                  Emoji Picker Placeholder
-                </p>
-              </div>
-            )}
-          </div>
         </div>
-        <button
-          onClick={() => alert("Record audio clicked (not implemented)")}
-          className="p-2 text-gray-500 hover:text-indigo-600 focus:outline-none"
-          title="Start recording"
-          aria-label="Start recording"
-        >
-          <MicrophoneIcon className="w-5 h-5" />
-        </button>
         <button
           onClick={handleSubmit}
           className="p-2 bg-[#01274F] text-white rounded-lg hover:bg-opacity-90 focus:outline-none focus:ring-2 focus:ring-[#01274F] focus:ring-opacity-50 transition-colors duration-200 active:scale-95"
@@ -738,9 +668,6 @@ const ChatInterface = ({
             participant={aiPartner}
             lastSeen={aiPartner.lastSeen}
             onBack={() => window.history.back()}
-            onSearch={() => alert("Search clicked")}
-            onMenuToggle={() => setIsMenuOpen(!isMenuOpen)}
-            isMenuOpen={isMenuOpen}
         />
         <div className="relative z-10">
           {isMenuOpen && <ConversationMenu />}

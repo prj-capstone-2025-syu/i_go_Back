@@ -88,7 +88,7 @@ export default function Calendar() {
   // 카테고리별 색상 반환
   const getCategoryColor = (category: string) => { // category 타입 string으로 명시
     switch (category) {
-      case "DAILY": return "#4285F4";
+      case "PERSONAL": return "#4285F4";
       case "WORK": return "#0F9D58";
       case "STUDY": return "#F4B400";
       case "EXERCISE": return "#DB4437";

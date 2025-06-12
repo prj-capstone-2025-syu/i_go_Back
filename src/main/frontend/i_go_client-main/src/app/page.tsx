@@ -540,7 +540,6 @@ const Home: FC = () => {
     const hasStartCoords = currentSchedule.startX != null && currentSchedule.startY != null;
     const hasDestCoords = currentSchedule.destinationX != null && currentSchedule.destinationY != null;
 
-    // 좌표가 있으면 해당 좌표로 Tmap 길찾기 링크 생성
     if (hasStartCoords && hasDestCoords) {
       return `https://map.kakao.com/?map_type=TYPE_MAP&target=car&rt=${currentSchedule.startY},${currentSchedule.startX},${currentSchedule.destinationY},${currentSchedule.destinationX}&rt1=${encodeURIComponent(currentSchedule.startLocation || '출발지')}&rt2=${encodeURIComponent(currentSchedule.location || '도착지')}&rtIds=,&rtTypes=,`;
     }
