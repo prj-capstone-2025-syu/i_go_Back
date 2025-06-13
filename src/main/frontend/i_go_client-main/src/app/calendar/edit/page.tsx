@@ -369,7 +369,6 @@ export default function EditSchedule() {
       console.log('전송할 일정 데이터:', scheduleData);
 
       await updateSchedule(scheduleId, scheduleData);
-      alert('일정이 성공적으로 수정되었습니다!');
       router.push('/calendar');
 
     } catch (error) {
@@ -394,7 +393,6 @@ export default function EditSchedule() {
 
     try {
       await deleteSchedule(scheduleId!);
-      alert('일정이 삭제되었습니다.');
       router.push('/calendar');
     } catch (error) {
       console.error('일정 삭제 실패:', error);

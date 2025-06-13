@@ -311,9 +311,10 @@ public class TransportService {
      * ⚠️ 임시 주석 처리: API 호출 제한으로 인한 조치
      */
     private Integer calculateTransitTimeInternal(TransportTimeRequest request) {
-        log.info("🚌 대중교통 API 호출 - 임시로 null 반환 (API 제한으로 인해 주석 처리됨)");
+        //log.info("🚌 대중교통 API 호출 - 임시로 null 반환 (API 제한으로 인해 주석 처리됨)");
+        log.info("🚌 대중교통 API 호출");
 
-        /* API 호출 제한으로 인해 임시 주석 처리
+        /* API 호출 제한으로 인해 임시 주석 처리*/
         try {
             String url = "https://apis.openapi.sk.com/transit/routes/sub";
 
@@ -367,7 +368,7 @@ public class TransportService {
         } catch (Exception e) {
             log.error("대중교통 이동시간 계산 실패: {}", e.getMessage(), e);
         }
-        */
+        //*/
 
         return null; // 임시로 null 반환
     }

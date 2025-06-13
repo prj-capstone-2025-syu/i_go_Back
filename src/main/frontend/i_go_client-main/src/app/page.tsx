@@ -45,84 +45,6 @@ interface RoutineItem {
   durationMinutes: number;
 }
 
-// TMap 스크립트 로딩 상태 관리
-let isMapScriptLoading = false;
-let isMapScriptLoaded = false;
-let mapScriptCallbacks: Function[] = [];
-let loadRetries = 0;
-const MAX_RETRIES = 3;
-
-// TMap 스크립트 로드 함수
-const loadTMapScript = () => {
-  return new Promise((resolve, reject) => {
-    if (isMapScriptLoaded) {
-      console.log("TMap API 이미 로드됨");
-      resolve(true);
-      return;
-    }
-
-    if (isMapScriptLoading) {
-      console.log("TMap API 로드 중... 콜백 등록");
-      mapScriptCallbacks.push(resolve);
-      return;
-    }
-
-    // 로딩 상태로 변경
-    isMapScriptLoading = true;
-
-    // API 키 확인
-    const apiKey = process.env.NEXT_PUBLIC_TMAP_API_KEY;
-    if (!apiKey) {
-      console.error("TMap API 키가 설정되지 않았습니다.");
-      reject(new Error("TMap API 키가 설정되지 않았습니다."));
-      isMapScriptLoading = false;
-      return;
-    }
-
-    console.log("TMap API 로드 시작...");
-
-    // 프로토콜 명시적으로 지정 (https)
-    const mapScript = document.createElement("script");
-    mapScript.src = `https://tmapapi.tmapmobility.com/jsv2?version=1&appKey=${apiKey}`;
-    mapScript.async = true;
-    mapScript.crossOrigin = "anonymous"; // CORS 문제 해결 시도
-
-    mapScript.onload = () => {
-      console.log("TMap API 로드 성공!");
-      isMapScriptLoaded = true;
-      isMapScriptLoading = false;
-      loadRetries = 0; // 성공 시 재시도 카운터 초기화
-      resolve(true);
-      mapScriptCallbacks.forEach(callback => callback(true));
-      mapScriptCallbacks = [];
-    };
-
-    mapScript.onerror = (error) => {
-      console.error("TMap 스크립트 로드 실패:", error);
-      isMapScriptLoading = false;
-
-      // 재시도 로직
-      if (loadRetries < MAX_RETRIES) {
-        loadRetries++;
-        console.log(`TMap API 로드 재시도 (${loadRetries}/${MAX_RETRIES})...`);
-        // 0.5초 후 재시도
-        setTimeout(() => {
-          document.head.removeChild(mapScript);
-          loadTMapScript().then(resolve).catch(reject);
-        }, 500);
-        return;
-      }
-
-      // 최대 재시도 횟수 초과
-      reject(new Error(`TMap 스크립트 로드 실패 (${loadRetries} 회 시도)`));
-      mapScriptCallbacks.forEach(callback => callback(false));
-      mapScriptCallbacks = [];
-    };
-
-    document.head.appendChild(mapScript);
-  });
-};
-
 // React 컴포넌트
 const Home: FC = () => {
   const [keyword, setKeyword] = useState("");
@@ -156,6 +78,8 @@ const Home: FC = () => {
   const [showTransportTimes, setShowTransportTimes] = useState(false);
   // 비대면 일정 여부 확인을 위한 상태 추가
   const [isRemoteEvent, setIsRemoteEvent] = useState(false);
+  // 위치 정보가 없는지 확인하는 상태 추가
+  const [isEmptyLocation, setIsEmptyLocation] = useState(false);
 
   // 1분마다 자동 리프레시를 위한 상태
   const [refreshToken, setRefreshToken] = useState(0);
@@ -404,6 +328,16 @@ const Home: FC = () => {
       // 애니메이션 초기 상태 설정
       setShowTransportTimes(false);
 
+      // 위치 정보가 없는 경우 확인
+      if (!currentSchedule.location || currentSchedule.location.trim() === '') {
+        setIsEmptyLocation(true);
+        console.log('🚦 [DEBUG] 위치 정보 없음', currentSchedule.title);
+        setIsTransportLoading(false);
+        return;
+      } else {
+        setIsEmptyLocation(false);
+      }
+
       // 비대면 일정인지 확인
       if (currentSchedule.location?.toLowerCase() === '비대면') {
         // 비대면 일정으로 설정
@@ -432,8 +366,15 @@ const Home: FC = () => {
         location: currentSchedule.location
       });
 
+      // 필요한 좌표 정보가 없는 경우 계산 중단
+      if (!hasStartCoords && !hasDestCoords) {
+        console.log('🚦 [DEBUG] 출발지 및 목적지 좌표 정보 부족으로 이동시간 계산 불가');
+        setIsTransportLoading(false);
+        return;
+      }
+
       // 위치 정보가 있는 경우에만 이동시간 계산
-      if ((hasStartCoords && hasDestCoords) || (currentSchedule.location)) {
+      if (hasStartCoords || hasDestCoords) {
         setIsTransportLoading(true);
         console.log('🚦 [DEBUG] 이동시간 계산 시작...');
 
@@ -468,11 +409,10 @@ const Home: FC = () => {
                 startY = position.coords.latitude;
                 console.log("🚦 [DEBUG] 현재 사용자 위치 사용:", startX, startY);
               } catch (error) {
-                console.warn("🚦 [DEBUG] 위치 정보 가져오기 실패, 기본값 사용:", error);
-                // 서울시청 기본 좌표
-                startX = 126.9779692;
-                startY = 37.5662952;
-                console.log("🚦 [DEBUG] 기본 출발지 좌표(서울시청) 사용:", startX, startY);
+                console.warn("🚦 [DEBUG] 위치 정보 가져오기 실패:", error);
+                // 출발지 좌표를 가져오지 못한 경우 계산 중단
+                setIsTransportLoading(false);
+                return;
               }
             }
 
@@ -482,16 +422,18 @@ const Home: FC = () => {
               endX = currentSchedule.destinationX;
               endY = currentSchedule.destinationY;
               console.log("🚦 [DEBUG] 일정의 목적지 좌표 사용:", endX, endY);
-            } else if (currentSchedule.location) {
-              // 목적지 좌표가 없지만 장소명은 있는 경우
-              console.log("🚦 [DEBUG] 목적지 좌표 없음, 기본값(강남역) 사용");
-              // 강남역 기본 좌표
-              endX = 127.0495556;
-              endY = 37.5032500;
-              console.log("🚦 [DEBUG] 기본 목적지 좌표(강남역) 사용:", endX, endY);
             } else {
-              // 목적지 정보가 전혀 없는 경우
-              console.log("🚦 [DEBUG] 목적지 정보 없음, 계산 취소");
+              // 목적지 좌표가 없는 경우 계산 중단
+              console.log("🚦 [DEBUG] 목적지 좌표 없음, 이동시간 계산 중단");
+              setIsTransportLoading(false);
+              return;
+            }
+
+            // 잘못된 좌표값 체크 (null, undefined, NaN)
+            if (!startX || !startY || !endX || !endY ||
+                isNaN(Number(startX)) || isNaN(Number(startY)) ||
+                isNaN(Number(endX)) || isNaN(Number(endY))) {
+              console.error("🚦 [ERROR] 유효하지 않은 좌표값:", { startX, startY, endX, endY });
               setIsTransportLoading(false);
               return;
             }
@@ -517,7 +459,6 @@ const Home: FC = () => {
               setShowTransportTimes(true); // 애니메이션 표시 활성화
               console.log("🚦 [DEBUG] 이동시간 표시 애니메이션 활성화");
             }, 500);
-
           } catch (error) {
             console.error("🚦 [ERROR] 이동시간 계산 중 오류:", error);
             setIsTransportLoading(false);
@@ -528,6 +469,7 @@ const Home: FC = () => {
         calculateTimes();
       } else {
         console.log('🚦 [DEBUG] 좌표 정보 부족으로 이동시간 계산 건너뜀');
+        setIsTransportLoading(false);
       }
     }
   }, [getCurrentSchedule]);
@@ -714,175 +656,183 @@ const Home: FC = () => {
                           실시간 예상 소요시간
                         </p>
                         {isRemoteEvent ? (
-                          // 비대면 일정일 경우 메시지 표시
-                          <div className="flex items-center justify-center py-3 px-4 bg-gray-50 rounded-md">
-                            <span className="text-blue-600 mr-2 text-lg">💻</span>
-                            <p className="text-[#383838] text-[15px] font-medium">
-                              비대면 일정입니다. 이동시간이 필요하지 않습니다.
-                            </p>
-                          </div>
-                        ) : (
-                          // 대면 일정일 경우 이동시간 표시
-                          <>
-                            <div className="grid grid-cols-3">
-                              <div className="h-auto flex gap-x-[5px] items-center justify-center">
-                                <svg
-                                    width="22"
-                                    height="22"
-                                    viewBox="0 0 22 22"
-                                    fill="none"
-                                    xmlns="http://www.w3.org/2000/svg"
-                                >
-                                  <rect width="22" height="22" fill="url(#pattern0_298_2791)" />
-                                  <defs>
-                                    <pattern
-                                        id="pattern0_298_2791"
-                                        patternContentUnits="objectBoundingBox"
-                                        width="1"
-                                        height="1"
-                                    >
-                                      <use
-                                          xlinkHref="#image0_298_2791"
-                                          transform="scale(0.00195312)"
-                                      />
-                                    </pattern>
-                                    <image
-                                        id="image0_298_2791"
-                                        width="512"
-                                        height="512"
-                                        preserveAspectRatio="none"
-                                        xlinkHref=""
-                                    />
-                                  </defs>
-                                </svg>
-
-                                <p className={`group-hover:!text-[#fff] text-[#01274F] text-[14px] font-[500] tracking-[-0.8px] leading-[110%] transition-opacity duration-500 ${showTransportTimes ? 'opacity-100' : 'opacity-0'}`}>
-                                  {!isTransportLoading && transportTimes.driving !== null ? formatTransportTime(transportTimes.driving) : ""}
-                                </p>
-                                {isTransportLoading && (
-                                    <span className="inline-block w-5 h-5 border-2 border-t-transparent border-[#01274F] rounded-full animate-spin"></span>
-                                )}
-                              </div>
-                              <div className="h-auto flex gap-x-[5px] items-center justify-center">
-                                <svg
-                                    width="22"
-                                    height="22"
-                                    viewBox="0 0 22 22"
-                                    fill="none"
-                                    xmlns="http://www.w3.org/2000/svg"
-                                >
-                                  <rect width="22" height="22" fill="url(#pattern0_298_2792)" />
-                                  <defs>
-                                    <pattern
-                                        id="pattern0_298_2792"
-                                        patternContentUnits="objectBoundingBox"
-                                        width="1"
-                                        height="1"
-                                    >
-                                      <use
-                                          xlinkHref="#image0_298_2792"
-                                          transform="scale(0.00195312)"
-                                      />
-                                    </pattern>
-                                    <image
-                                        id="image0_298_2792"
-                                        width="512"
-                                        height="512"
-                                        preserveAspectRatio="none"
-                                        xlinkHref=""
-                                    />
-                                  </defs>
-                                </svg>
-
-                                <p className={`group-hover:!text-[#fff] text-[#01274F] text-[14px] font-[500] tracking-[-0.8px] leading-[110%] transition-opacity duration-500 ${showTransportTimes ? 'opacity-100' : 'opacity-0'}`}>
-                                  {!isTransportLoading && transportTimes.transit !== null ? formatTransportTime(transportTimes.transit) : ""}
-                                </p>
-                                {isTransportLoading && (
-                                    <span className="inline-block w-5 h-5 border-2 border-t-transparent border-[#01274F] rounded-full animate-spin"></span>
-                                )}
-                              </div>
-                              <div className="h-auto flex gap-x-[5px] items-center justify-center">
-                                <svg
-                                    width="22"
-                                    height="22"
-                                    viewBox="0 0 22 22"
-                                    fill="none"
-                                    xmlns="http://www.w3.org/2000/svg"
-                                >
-                                  <rect width="22" height="22" fill="url(#pattern0_298_2793)" />
-                                  <defs>
-                                    <pattern
-                                        id="pattern0_298_2793"
-                                        patternContentUnits="objectBoundingBox"
-                                        width="1"
-                                        height="1"
-                                    >
-                                      <use
-                                          xlinkHref="#image0_298_2793"
-                                          transform="scale(0.00195312)"
-                                      />
-                                    </pattern>
-                                    <image
-                                        id="image0_298_2793"
-                                        width="512"
-                                        height="512"
-                                        preserveAspectRatio="none"
-                                        xlinkHref=""
-                                    />
-                                  </defs>
-                                </svg>
-
-                                <p className={`group-hover:!text-[#fff] text-[#01274F] text-[14px] font-[500] tracking-[-0.8px] leading-[110%] transition-opacity duration-500 ${showTransportTimes ? 'opacity-100' : 'opacity-0'}`}>
-                                  {!isTransportLoading && transportTimes.walking !== null ? formatTransportTime(transportTimes.walking) : ""}
-                                </p>
-                                {isTransportLoading && (
-                                    <span className="inline-block w-5 h-5 border-2 border-t-transparent border-[#01274F] rounded-full animate-spin"></span>
-                                )}
-                              </div>
-                            </div>
-                            <Link
-                                href={generateTmapDirectionLink(currentSchedule)}
-                                target="_blank"
-                                className="px-[5px] py-[10px] border-[#dfdfdf] border-[1px] rounded-[5px] hover:opacity-[0.7] w-full flex items-center justify-center gap-x-[5px] mt-[10px]"
-                            >
-                              <svg
-                                  width="22"
-                                  height="22"
-                                  viewBox="0 0 22 22"
-                                  fill="none"
-                                  xmlns="http://www.w3.org/2000/svg"
-                              >
-                                <rect
-                                    width="22"
-                                    height="22"
-                                    fill="url(#pattern0_298_2746dafasdfa)"
-                                />
-                                <defs>
-                                  <pattern
-                                      id="pattern0_298_2746dafasdfa"
-                                      patternContentUnits="objectBoundingBox"
-                                      width="1"
-                                      height="1"
-                                  >
-                                    <use
-                                        xlinkHref="#image0_298_2746"
-                                        transform="translate(-3.68301 -1.77451) scale(0.00326797)"
-                                    />
-                                  </pattern>
-                                  <image
-                                      id="image0_298_2746"
-                                      width="2560"
-                                      height="1440"
-                                      preserveAspectRatio="none"
-                                      xlinkHref=""
-                                  />
-                                </defs>
-                              </svg>
-                              <p className="text-[#383838] text-[14px] tracking-[-0.2px] font-[400]">
-                                TMAP 빠른 길찾기
+                            // 비대면 일정일 경우 메시지 표시
+                            <div className="flex items-center justify-center py-3 px-4 bg-gray-50 rounded-md">
+                              <span className="text-blue-600 mr-2 text-lg">💻</span>
+                              <p className="text-[#383838] text-[15px] font-medium">
+                                비대면 일정입니다. 이동시간이 필요하지 않습니다.
                               </p>
-                            </Link>
-                          </>
+                            </div>
+                        ) : isEmptyLocation ? (
+                            // 위치 정보가 없는 경우 메시지 표시
+                            <div className="flex items-center justify-center py-3 px-4 bg-gray-50 rounded-md">
+                              <span className="text-amber-500 mr-2 text-lg">📍</span>
+                              <p className="text-[#383838] text-[15px] font-medium">
+                                출발지와 목적지가 정해지지 않았습니다!
+                              </p>
+                            </div>
+                        ) : (
+                            // 대면 일정일 경우 이동시간 표시
+                            <>
+                              <div className="grid grid-cols-3">
+                                <div className="h-auto flex gap-x-[5px] items-center justify-center">
+                                  <svg
+                                      width="22"
+                                      height="22"
+                                      viewBox="0 0 22 22"
+                                      fill="none"
+                                      xmlns="http://www.w3.org/2000/svg"
+                                  >
+                                    <rect width="22" height="22" fill="url(#pattern0_298_2791)" />
+                                    <defs>
+                                      <pattern
+                                          id="pattern0_298_2791"
+                                          patternContentUnits="objectBoundingBox"
+                                          width="1"
+                                          height="1"
+                                      >
+                                        <use
+                                            xlinkHref="#image0_298_2791"
+                                            transform="scale(0.00195312)"
+                                        />
+                                      </pattern>
+                                      <image
+                                          id="image0_298_2791"
+                                          width="512"
+                                          height="512"
+                                          preserveAspectRatio="none"
+                                          xlinkHref=""
+                                      />
+                                    </defs>
+                                  </svg>
+
+                                  <p className={`group-hover:!text-[#fff] text-[#01274F] text-[14px] font-[500] tracking-[-0.8px] leading-[110%] transition-opacity duration-500 ${showTransportTimes ? 'opacity-100' : 'opacity-0'}`}>
+                                    {!isTransportLoading && transportTimes.driving !== null ? formatTransportTime(transportTimes.driving) : ""}
+                                  </p>
+                                  {isTransportLoading && (
+                                      <span className="inline-block w-5 h-5 border-2 border-t-transparent border-[#01274F] rounded-full animate-spin"></span>
+                                  )}
+                                </div>
+                                <div className="h-auto flex gap-x-[5px] items-center justify-center">
+                                  <svg
+                                      width="22"
+                                      height="22"
+                                      viewBox="0 0 22 22"
+                                      fill="none"
+                                      xmlns="http://www.w3.org/2000/svg"
+                                  >
+                                    <rect width="22" height="22" fill="url(#pattern0_298_2792)" />
+                                    <defs>
+                                      <pattern
+                                          id="pattern0_298_2792"
+                                          patternContentUnits="objectBoundingBox"
+                                          width="1"
+                                          height="1"
+                                      >
+                                        <use
+                                            xlinkHref="#image0_298_2792"
+                                            transform="scale(0.00195312)"
+                                        />
+                                      </pattern>
+                                      <image
+                                          id="image0_298_2792"
+                                          width="512"
+                                          height="512"
+                                          preserveAspectRatio="none"
+                                          xlinkHref=""
+                                      />
+                                    </defs>
+                                  </svg>
+
+                                  <p className={`group-hover:!text-[#fff] text-[#01274F] text-[14px] font-[500] tracking-[-0.8px] leading-[110%] transition-opacity duration-500 ${showTransportTimes ? 'opacity-100' : 'opacity-0'}`}>
+                                    {!isTransportLoading && transportTimes.transit !== null ? formatTransportTime(transportTimes.transit) : ""}
+                                  </p>
+                                  {isTransportLoading && (
+                                      <span className="inline-block w-5 h-5 border-2 border-t-transparent border-[#01274F] rounded-full animate-spin"></span>
+                                  )}
+                                </div>
+                                <div className="h-auto flex gap-x-[5px] items-center justify-center">
+                                  <svg
+                                      width="22"
+                                      height="22"
+                                      viewBox="0 0 22 22"
+                                      fill="none"
+                                      xmlns="http://www.w3.org/2000/svg"
+                                  >
+                                    <rect width="22" height="22" fill="url(#pattern0_298_2793)" />
+                                    <defs>
+                                      <pattern
+                                          id="pattern0_298_2793"
+                                          patternContentUnits="objectBoundingBox"
+                                          width="1"
+                                          height="1"
+                                      >
+                                        <use
+                                            xlinkHref="#image0_298_2793"
+                                            transform="scale(0.00195312)"
+                                        />
+                                      </pattern>
+                                      <image
+                                          id="image0_298_2793"
+                                          width="512"
+                                          height="512"
+                                          preserveAspectRatio="none"
+                                          xlinkHref=""
+                                      />
+                                    </defs>
+                                  </svg>
+
+                                  <p className={`group-hover:!text-[#fff] text-[#01274F] text-[14px] font-[500] tracking-[-0.8px] leading-[110%] transition-opacity duration-500 ${showTransportTimes ? 'opacity-100' : 'opacity-0'}`}>
+                                    {!isTransportLoading && transportTimes.walking !== null ? formatTransportTime(transportTimes.walking) : ""}
+                                  </p>
+                                  {isTransportLoading && (
+                                      <span className="inline-block w-5 h-5 border-2 border-t-transparent border-[#01274F] rounded-full animate-spin"></span>
+                                  )}
+                                </div>
+                              </div>
+                              <Link
+                                  href={generateTmapDirectionLink(currentSchedule)}
+                                  target="_blank"
+                                  className="px-[5px] py-[10px] border-[#dfdfdf] border-[1px] rounded-[5px] hover:opacity-[0.7] w-full flex items-center justify-center gap-x-[5px] mt-[10px]"
+                              >
+                                <svg
+                                    width="22"
+                                    height="22"
+                                    viewBox="0 0 22 22"
+                                    fill="none"
+                                    xmlns="http://www.w3.org/2000/svg"
+                                >
+                                  <rect
+                                      width="22"
+                                      height="22"
+                                      fill="url(#pattern0_298_2746dafasdfa)"
+                                  />
+                                  <defs>
+                                    <pattern
+                                        id="pattern0_298_2746dafasdfa"
+                                        patternContentUnits="objectBoundingBox"
+                                        width="1"
+                                        height="1"
+                                    >
+                                      <use
+                                          xlinkHref="#image0_298_2746"
+                                          transform="translate(-3.68301 -1.77451) scale(0.00326797)"
+                                      />
+                                    </pattern>
+                                    <image
+                                        id="image0_298_2746"
+                                        width="2560"
+                                        height="1440"
+                                        preserveAspectRatio="none"
+                                        xlinkHref=""
+                                    />
+                                  </defs>
+                                </svg>
+                                <p className="text-[#383838] text-[14px] tracking-[-0.2px] font-[400]">
+                                  TMAP 빠른 길찾기
+                                </p>
+                              </Link>
+                            </>
                         )}
                         <div className="mt-[20px] mb-[13px] w-full h-[1px] bg-[#dfdfdf]"></div>
                         <div className="flex justify-between items-center w-full mb-[8px]">

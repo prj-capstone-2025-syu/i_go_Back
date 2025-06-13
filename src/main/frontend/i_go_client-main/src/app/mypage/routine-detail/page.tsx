@@ -41,7 +41,7 @@ export default function RoutineDetailPage() {
         setTitle(data.name);
 
         // 루틴 아이템들 매핑
-        const items = data.items.map(item => ({
+        const items = data.items.map((item: { id: any; name: any; durationMinutes: { toString: () => any; }; }) => ({
           id: item.id,
           name: item.name,
           time: item.durationMinutes.toString(),
@@ -109,7 +109,6 @@ export default function RoutineDetailPage() {
         title: title,
         items: routineItems
       });
-      alert("루틴이 저장되었습니다.");
       router.push("/mypage/routine");
     } catch (err) {
       console.error("루틴 저장 실패:", err);
@@ -131,7 +130,6 @@ export default function RoutineDetailPage() {
   const confirmDelete = async () => {
     try {
       await deleteRoutine(routineId!);
-      alert("루틴이 삭제되었습니다.");
       router.push("/mypage/routine");
     } catch (err) {
       console.error("루틴 삭제 실패:", err);

@@ -315,7 +315,6 @@ export default function CreateSchedule() {
       console.log('변환된 종료시간:', endDateTime);
 
       await createSchedule(scheduleData);
-      alert('일정이 성공적으로 등록되었습니다!');
       router.push('/calendar');
 
       // 폼 초기화
