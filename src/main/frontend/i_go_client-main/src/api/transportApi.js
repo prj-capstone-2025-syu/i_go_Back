@@ -172,6 +172,7 @@ export const calculateAllTransportTimes = async (startX, startY, endX, endY) => 
     return results;
 };
 
+/*
 // 대중교통 시간만 별도로 계산 (사용자가 명시적으로 요청할 경우)
 export const getTransitTime = async (startX, startY, endX, endY) => {
     if (!startX || !startY || !endX || !endY) {
@@ -253,3 +254,4 @@ export const getCoordinateFromAddress = async (address) => {
     console.warn('주소->좌표 변환에 실패했습니다. null 반환');
     return null;
 };
+*/

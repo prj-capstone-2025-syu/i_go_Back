@@ -56,6 +56,9 @@ export default function EditSchedule() {
   const [startLocationSelected, setStartLocationSelected] = useState(false);
   const [destinationSelected, setDestinationSelected] = useState(false);
 
+  // 애니메이션 효과를 위한 상태 추가
+  const [showForm, setShowForm] = useState(false);
+
   // 시간 정보 파싱 함수
   const parseDateTime = (dateTimeStr: string) => {
     if (!dateTimeStr) return { date: "", time: "" };
@@ -247,6 +250,14 @@ export default function EditSchedule() {
     loadData();
   }, [scheduleId]);
 
+  // 로딩이 완료되면 폼을 표시하는 애니메이션 설정
+  useEffect(() => {
+    if (!initialLoading) {
+      // 폼 표시
+      setTimeout(() => setShowForm(true), 10); // 약간의 딜레이 후 폼 표시
+    }
+  }, [initialLoading]);
+
   const handleRoutineChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     setSelectedRoutine(e.target.value);
     handleFieldTouch('routine');
@@ -421,7 +432,7 @@ export default function EditSchedule() {
         <div className="flex flex-col w-full h-full">
           <NavBar title="일정 수정" link="/calendar"></NavBar>
           <div className="flex justify-center items-center h-full">
-            <p>로딩 중...</p>
+            <p> </p>
           </div>
         </div>
     );
@@ -433,7 +444,13 @@ export default function EditSchedule() {
         <KakaoMapScript /> {/* 명시적으로 컴포넌트 추가 */}
         <div className="w-full max-h-full overflow-y-auto">
           <div className="flex flex-col items-center justify-start p-[20px] w-full h-auto">
-            <div className="w-full shadow-[0px_0px_10px_rgba(0,0,0,0.2)] bg-[#fff] p-[20px]">
+            <div
+                className="w-full shadow-[0px_0px_10px_rgba(0,0,0,0.2)] bg-[#fff] p-[20px] transition-all duration-700 ease-in-out"
+                style={{
+                  opacity: showForm ? 1 : 0,
+                  transform: showForm ? 'translateY(0)' : 'translateY(10px)'
+                }}
+            >
               <form onSubmit={handleSubmit} className="search-htmlForm">
                 <div className="flex flex-col items-center justify-center gap-y-[8px] w-full">
                   <div className="grid grid-cols-1 2xl:grid-cols-3 flex-col 2xl:flex-row flex-wrap items-center gap-[20px] w-full">
