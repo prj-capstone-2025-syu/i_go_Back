@@ -1,16 +1,4 @@
-// src/api/transportApi.js
-import axios from 'axios';
-
-//TODO: 백엔드 URL 설정
-//const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://igo.ai.kr';
-const API_URL ='http://localhost:8080';
-const api = axios.create({
-    baseURL: `${API_URL}/api`,
-    headers: {
-        'Content-Type': 'application/json'
-    },
-    withCredentials: true
-});
+import api from './axiosConfig'; // axiosConfig에서 api 임포트
 
 // 로컬 스토리지 캐시 키 접두어
 const CACHE_PREFIX = 'transport_time_';

@@ -4,6 +4,7 @@ import React, { useState, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { getRoutineById, updateRoutine, deleteRoutine } from "@/api/routineApi";
 import ConfirmPopup from "@/components/common/ConfirmPopup";
+import api from '@/api/axiosConfig';
 
 // 루틴 항목 인터페이스 정의
 interface RoutineItem {

@@ -1,16 +1,6 @@
-import axios from 'axios';
+import api from './axiosConfig'; // axiosConfig에서 api 임포트
 import {app} from '@/utils/firebase'; // Firebase 초기화 코드가 있는 파일에서 app을 가져옵니다.
 import { getMessaging, getToken } from "firebase/messaging"; // Firebase 메시징
-//TODO: 백엔드 URL 설정
-//const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://igo.ai.kr';
-const API_URL = 'http://localhost:8080';
-const api = axios.create({
-    baseURL: `${API_URL}/api`,
-    headers: {
-        'Content-Type': 'application/json'
-    },
-    withCredentials: true
-}); // 절대경로 -> 무조건 바꿔야함.
 
 // 현재 사용자 정보 조회
 export const getCurrentUser = async () => {
@@ -38,17 +28,13 @@ export const updateUserInfo = async (userData) => {
 
 // 사용자 알림 설정을 가져오는 함수
 export const getNotificationSettings = async () => {
-    const response = await axios.get(`${API_URL}/api/user/me/settings/notifications`, {
-        withCredentials: true, // 인증 쿠키를 포함하여 요청
-    });
+    const response = await api.get('/user/me/settings/notifications'); // api 인스턴스 사용
     return response.data;
 };
 
 // 사용자 알림 설정을 업데이트하는 함수
 export const updateNotificationSettings = async (settings) => {
-    const response = await axios.put(`${API_URL}/api/user/me/settings/notifications`, settings, {
-        withCredentials: true, // 인증 쿠키를 포함하여 요청
-    });
+    const response = await api.put('/user/me/settings/notifications', settings); // api 인스턴스 사용
     return response.data; // 서버에서 업데이트된 전체 설정을 반환한다고 가정합니다.
 };
 

@@ -153,6 +153,19 @@ const ChatInterface = () => {
   const aiPartner = { name: "아이고 AI", avatarUrl: "/logo.png" };
   const currentUser = { name: "나", avatarUrl: "..." };
 
+  // access_token이 있으면 이전 페이지로 이동시키는 기능
+  useEffect(() => {
+    // 클라이언트 사이드에서만 실행
+    if (typeof window === "undefined") return;
+
+    const accessToken = localStorage.getItem("access_token");
+    if (accessToken) {
+      // 이전 페이지가 있는 경우 이전 페이지로, 없으면 메인 페이지로 이동
+      const previousPage = sessionStorage.getItem("previousPage") || "/";
+      router.push(previousPage);
+    }
+  }, [router]);
+
   // 범용 메시지 추가 함수
   const addMessage = (
       text: string,

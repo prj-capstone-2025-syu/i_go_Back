@@ -4,6 +4,7 @@ import React, { useState, useEffect, useRef, Suspense } from "react";
 import { useSearchParams } from "next/navigation"; // App Router에서 URL 파라미터를 읽기 위함
 import NavBarMain from "@/components/common/topNavMain"; // 필요하다면 NavBarMain을 여기에 추가
 import { sendChatMessage, handleAIFunction } from "@/api/chatApi"; // sendChatMessage를 sendMessage로 변경
+import api from '@/api/axiosConfig';
 import { format } from "date-fns";
 import { ko } from "date-fns/locale";
 import { createSchedule, getSchedules } from "@/api/scheduleApi";
