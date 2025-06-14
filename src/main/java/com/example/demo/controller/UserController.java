@@ -55,12 +55,19 @@ public class UserController {
     // 로그아웃
     @PostMapping("/logout")
     public ResponseEntity<?> logout(HttpServletResponse response) {
-        // 토큰 쿠키 제거
-        Cookie cookie = new Cookie("access_token", null);
-        cookie.setMaxAge(0); // 즉시 만료
-        cookie.setPath("/");
-        cookie.setHttpOnly(true);
-        response.addCookie(cookie);
+        // access_token 쿠키 제거
+        Cookie accessTokenCookie = new Cookie("access_token", null);
+        accessTokenCookie.setMaxAge(0); // 즉시 만료
+        accessTokenCookie.setPath("/");
+        accessTokenCookie.setHttpOnly(true);
+        response.addCookie(accessTokenCookie);
+
+        // refresh_token 쿠키 제거
+        Cookie refreshTokenCookie = new Cookie("refresh_token", null);
+        refreshTokenCookie.setMaxAge(0); // 즉시 만료
+        refreshTokenCookie.setPath("/");
+        refreshTokenCookie.setHttpOnly(true);
+        response.addCookie(refreshTokenCookie);
 
         return ResponseEntity.ok(Map.of("message", "로그아웃되었습니다."));
     }
@@ -74,12 +81,19 @@ public class UserController {
         try {
             userService.deleteUser(appUser.getId());
 
-            // 토큰 쿠키 제거
-            Cookie cookie = new Cookie("access_token", null);
-            cookie.setMaxAge(0); // 즉시 만료
-            cookie.setPath("/");
-            cookie.setHttpOnly(true);
-            response.addCookie(cookie);
+            // access_token 쿠키 제거
+            Cookie accessTokenCookie = new Cookie("access_token", null);
+            accessTokenCookie.setMaxAge(0); // 즉시 만료
+            accessTokenCookie.setPath("/");
+            accessTokenCookie.setHttpOnly(true);
+            response.addCookie(accessTokenCookie);
+
+            // refresh_token 쿠키 제거
+            Cookie refreshTokenCookie = new Cookie("refresh_token", null);
+            refreshTokenCookie.setMaxAge(0); // 즉시 만료
+            refreshTokenCookie.setPath("/");
+            refreshTokenCookie.setHttpOnly(true);
+            response.addCookie(refreshTokenCookie);
 
             return ResponseEntity.ok(Map.of("message", "회원 탈퇴가 성공적으로 처리되었습니다."));
         } catch (Exception e) {

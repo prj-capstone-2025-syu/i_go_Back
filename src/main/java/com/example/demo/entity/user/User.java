@@ -6,8 +6,12 @@ import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+import org.springframework.security.core.GrantedAuthority;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
 
 import java.time.LocalDateTime;
+import java.util.Collection;
+import java.util.Collections;
 
 @Entity
 @Table(name = "users")
@@ -48,6 +52,11 @@ public class User implements AppUser {
 
     private LocalDateTime googleTokenExpiresAt;
 
+    @Column(length = 1000) // 애플리케이션 자체 Refresh Token
+    private String appRefreshToken;
+
+    private LocalDateTime appRefreshTokenExpiresAt; // 애플리케이션 자체 Refresh Token 만료 시간
+
     @Column
     private String fcmToken;
 
@@ -82,6 +91,11 @@ public class User implements AppUser {
 
     @Override
     public String getRole() {
-        return "ROLE_USER";
+        return "ROLE_USER"; // 기본 역할
+    }
+
+    // Spring Security UserDetails 인터페이스의 getAuthorities() 구현
+    public Collection<? extends GrantedAuthority> getAuthorities() {
+        return Collections.singletonList(new SimpleGrantedAuthority(this.getRole()));
     }
 }

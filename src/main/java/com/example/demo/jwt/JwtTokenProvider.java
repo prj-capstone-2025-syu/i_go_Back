@@ -4,6 +4,7 @@ import com.example.demo.repository.UserRepository;
 import io.jsonwebtoken.*;
 import io.jsonwebtoken.security.Keys;
 import jakarta.annotation.PostConstruct;
+import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 import org.springframework.beans.factory.annotation.Value;
@@ -22,7 +23,11 @@ public class JwtTokenProvider {
     private String secretKeyEncoded;
 
     @Value("${jwt.expiration-hours}")
-    private long expirationHours;
+    private long accessTokenExpirationMillis;
+
+    @Getter
+    @Value("${jwt.refresh}")
+    private long refreshTokenExpirationMillis;
 
     private Key key;
 
@@ -31,19 +36,36 @@ public class JwtTokenProvider {
         this.key = Keys.hmacShaKeyFor(secretKeyEncoded.getBytes());
     }
 
-    public long getExpirationHours() {
-        return (int)expirationHours / (60 * 60 * 1000); // 밀리초를 시간 단위로 변환
+    public long getAccessTokenExpirationHours() {
+        return accessTokenExpirationMillis / (60 * 60 * 1000); // 밀리초를 시간 단위로 변환
     }
 
-    public String createToken(String userId) {
+    public String createAccessToken(String userId) {
         Date now = new Date();
-        Date expiry = new Date(now.getTime() + expirationHours * 60 * 60 * 1000L);
+        Date expiry = new Date(now.getTime() + accessTokenExpirationMillis);
 
         String role = "ROLE_USER"; // 모든 사용자는 동일한 역할
 
         Map<String, Object> claims = new HashMap<>();
         claims.put("sub", userId);
         claims.put("role", role);
+
+        return Jwts.builder()
+                .setClaims(claims)
+                .setIssuedAt(now)
+                .setExpiration(expiry)
+                .signWith(key, SignatureAlgorithm.HS256)
+                .compact();
+    }
+
+    public String createRefreshToken(String userId) {
+        Date now = new Date();
+        Date expiry = new Date(now.getTime() + refreshTokenExpirationMillis);
+
+        Map<String, Object> claims = new HashMap<>();
+        claims.put("sub", userId);
+        // Refresh token에는 최소한의 정보만 담는 것이 일반적
+        // claims.put("type", "refresh"); // 토큰 타입을 명시할 수도 있음.
 
         return Jwts.builder()
                 .setClaims(claims)
