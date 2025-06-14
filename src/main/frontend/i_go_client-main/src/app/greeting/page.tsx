@@ -37,6 +37,40 @@ const GoogleIcon: React.FC<React.SVGProps<SVGSVGElement>> = (props) => (
     </svg>
 );
 
+// --- 토큰 검증 유틸리티 함수 ---
+const getAccessToken = (): string | null => {
+  if (typeof window === 'undefined') return null;
+
+  // localStorage에서 access_token 확인
+  const token = localStorage.getItem('access_token');
+  if (token) return token;
+
+  // 쿠키에서 access_token 확인
+  const cookies = document.cookie.split(';');
+  for (let cookie of cookies) {
+    const [name, value] = cookie.trim().split('=');
+    if (name === 'access_token') {
+      return value;
+    }
+  }
+
+  // URL 파라미터에서 access_token 확인 (OAuth 리다이렉트 후)
+  const urlParams = new URLSearchParams(window.location.search);
+  const urlToken = urlParams.get('access_token');
+  if (urlToken) {
+    // URL에서 받은 토큰을 localStorage에 저장
+    localStorage.setItem('access_token', urlToken);
+    return urlToken;
+  }
+
+  return null;
+};
+
+const isLoggedIn = (): boolean => {
+  const token = getAccessToken();
+  return token !== null && token !== '';
+};
+
 // --- 채팅 UI 관련 타입 및 컴포넌트 정의 ---
 
 interface ActionButtonProps {
@@ -104,7 +138,7 @@ const MessageItem: React.FC<{ message: Message }> = ({ message }) => {
             }`}
         >
           <div
-              className={`group max-w-xs md:max-w-md p-3 shadow-sm ${
+              className={`group max-w-xs md:max-md p-3 shadow-sm ${
                   message.isSenderMe
                       ? myMessageBubbleClass
                       : partnerMessageBubbleClass
@@ -153,16 +187,19 @@ const ChatInterface = () => {
   const aiPartner = { name: "아이고 AI", avatarUrl: "/logo.png" };
   const currentUser = { name: "나", avatarUrl: "..." };
 
-  // access_token이 있으면 이전 페이지로 이동시키는 기능
+  // 🔧 로그인 상태 확인 및 리다이렉트 로직 추가
   useEffect(() => {
-    // 클라이언트 사이드에서만 실행
-    if (typeof window === "undefined") return;
-
-    const accessToken = localStorage.getItem("access_token");
-    if (accessToken) {
-      // 이전 페이지가 있는 경우 이전 페이지로, 없으면 메인 페이지로 이동
-      const previousPage = sessionStorage.getItem("previousPage") || "/";
-      router.push(previousPage);
+    // 로그인 상태 확인
+    if (isLoggedIn()) {
+      // 로그인된 상태라면 이전 페이지로 이동
+      // history.length가 1이면 직접 URL로 접근한 경우이므로 홈으로 이동
+      if (window.history.length > 1) {
+        router.back();
+      } else {
+        // 직접 URL로 접근한 경우 메인 페이지나 대시보드로 이동
+        router.push('/'); // 또는 '/dashboard', '/main' 등 원하는 페이지
+      }
+      return;
     }
   }, [router]);
 
@@ -189,6 +226,9 @@ const ChatInterface = () => {
 
   // 🔧 핵심 수정사항: useEffect에 중복 실행 방지 로직 추가
   useEffect(() => {
+    // 로그인된 상태라면 온보딩 흐름을 실행하지 않음
+    if (isLoggedIn()) return;
+
     // 온보딩 흐름이 이미 실행되었거나, 다른 AI 흐름이 진행 중이면 중복 실행 방지
     if (onboardingFlowHasRun.current || isFlowRunning) {
       return;
@@ -323,6 +363,18 @@ const ChatInterface = () => {
     }
   }, [messages]);
 
+  // 로그인된 상태라면 빈 화면을 보여주거나 로딩 표시
+  if (isLoggedIn()) {
+    return (
+        <div className="flex items-center justify-center h-full">
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900 mx-auto mb-4"></div>
+            <p className="text-gray-600">이전 페이지로 이동 중...</p>
+          </div>
+        </div>
+    );
+  }
+
   return (
       <div className="flex flex-col grow h-full w-full bg-[#F9F9F9] overflow-hidden">
         <div
@@ -343,16 +395,16 @@ export default function ChatPage() {
       <Suspense fallback={<div>로딩...</div>}>
         <div className="flex flex-col w-full h-full">
           <style jsx global>{`
-          .btn-history-back {
-            pointer-events: none;
-          }
-          .main-wrapper {
-            height: 100dvh !important;
-          }
-          .bottom-nav-warpper {
-            display: none !important;
-          }
-        `}</style>
+            .btn-history-back {
+              pointer-events: none;
+            }
+            .main-wrapper {
+              height: 100dvh !important;
+            }
+            .bottom-nav-warpper {
+              display: none !important;
+            }
+          `}</style>
           <NavBarMain link="/greeting" />
           <ChatInterface />
         </div>
