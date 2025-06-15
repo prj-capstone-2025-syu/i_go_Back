@@ -57,17 +57,6 @@ public class NotificationController {
         return ResponseEntity.ok().build();
     }
 
-/*    @GetMapping("/recent")
-    public ResponseEntity<List<Notification>> getRecentNotifications(
-            @AuthenticationPrincipal AppUser appUser,
-            @RequestParam(defaultValue = "10") int limit) {
-        User user = userRepository.findById(appUser.getId())
-                .orElseThrow(() -> new IllegalArgumentException("사용자를 찾을 수 없습니다. ID: " + appUser.getId()));
-        Pageable pageable = PageRequest.of(0, limit);
-        List<Notification> notifications = notificationRepository.findByUserOrderByCreatedAtDesc(user, pageable);
-        return ResponseEntity.ok(notifications);
-    }*/
-
     @PostMapping("/send")
     public ResponseEntity<String> sendNotification(@RequestParam String token,
                                                    @RequestParam String title,
@@ -82,13 +71,13 @@ public class NotificationController {
 
     @GetMapping("/recent")
     public ResponseEntity<List<NotificationDto>> getRecentNotifications(
-            @AuthenticationPrincipal User user, // Spring Security를 통해 인증된 사용자 정보를 가져옵니다.
-            @RequestParam(defaultValue = "7") int limit) { // 기본값을 7로 설정합니다.
+            @AuthenticationPrincipal User user,
+            @RequestParam(defaultValue = "7") int limit) { // 기본값 7로
         if (user == null) {
-            // 사용자가 인증되지 않은 경우, 적절한 응답을 반환합니다. (예: 401 Unauthorized)
+
             return ResponseEntity.status(401).build();
         }
-        // NotificationService를 호출하여 사용자의 최근 알림을 가져옵니다.
+
         List<NotificationDto> notifications = notificationService.getNotificationsForUser(user.getId(), limit);
         return ResponseEntity.ok(notifications);
     }

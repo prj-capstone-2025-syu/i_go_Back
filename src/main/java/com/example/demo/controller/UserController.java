@@ -3,7 +3,7 @@ package com.example.demo.controller;
 import com.example.demo.dto.token.FcmTokenRequest;
 import com.example.demo.dto.notification.NotificationSettingsDto;
 import com.example.demo.entity.user.User;
-import com.example.demo.dto.UserUpdateRequestDto;
+import com.example.demo.dto.user.UserUpdateRequestDto;
 import com.example.demo.entity.entityInterface.AppUser;
 import com.example.demo.service.UserService;
 import jakarta.servlet.http.Cookie;

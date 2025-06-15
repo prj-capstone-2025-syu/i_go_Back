@@ -286,8 +286,8 @@ const ChatInterface = () => {
               icon: <GoogleIcon />,
               onClick: () => {
                 //TODO: 백엔드 URL 설정
-                //const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'https://igo.ai.kr';
-                const BACKEND_URL = 'http://localhost:8080';
+                const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'https://igo.ai.kr';
+                //const BACKEND_URL = 'http://localhost:8080';
                 // Google OAuth 인증 URL로 리다이렉트
                 window.location.href = `${BACKEND_URL}/oauth2/authorization/google`;
               },
@@ -344,8 +344,8 @@ const ChatInterface = () => {
               icon: <GoogleIcon />,
               onClick: () => {
                 //TODO: 백엔드 URL 설정
-                //const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'https://igo.ai.kr';
-                const BACKEND_URL = 'http://localhost:8080';
+                const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'https://igo.ai.kr';
+                //const BACKEND_URL = 'http://localhost:8080';
                 // Google OAuth 인증 URL로 리다이렉트
                 window.location.href = `${BACKEND_URL}/oauth2/authorization/google`;
               },
