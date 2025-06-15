@@ -94,8 +94,6 @@ export default function RoutineFormPage() {
 
       // 루틴 생성 API 호출
       await createRoutine(routineData);
-
-      alert("루틴이 성공적으로 저장되었습니다.");
       // 성공 후 루틴 목록 페이지로 이동
       router.push("/mypage/routine");
     } catch (err) {

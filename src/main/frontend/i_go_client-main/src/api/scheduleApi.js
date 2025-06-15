@@ -1,14 +1,4 @@
-// src/api/scheduleApi.js
-import axios from 'axios';
-
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080';
-const api = axios.create({
-    baseURL: `${API_URL}/api`,
-    headers: {
-        'Content-Type': 'application/json'
-    },
-    withCredentials: true
-});
+import api from './axiosConfig'; // axiosConfig에서 api 임포트
 
 // 일정 생성
 export const createSchedule = async (scheduleData) => {

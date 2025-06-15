@@ -1,14 +1,4 @@
-// src/api/routineApi.js
-import axios from 'axios';
-
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080';
-const api = axios.create({
-    baseURL: `${API_URL}/api`,
-    headers: {
-        'Content-Type': 'application/json'
-    },
-    withCredentials: true
-});
+import api from './axiosConfig'; // axiosConfig에서 api 임포트
 
 // 루틴 생성 함수
 export const createRoutine = async (routineData) => {

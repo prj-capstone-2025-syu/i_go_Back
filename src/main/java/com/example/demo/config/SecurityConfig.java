@@ -23,6 +23,7 @@ import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 
+import java.time.LocalDateTime;
 import java.util.Arrays;
 
 @Configuration
@@ -38,8 +39,9 @@ public class SecurityConfig {
         return PasswordEncoderFactories.createDelegatingPasswordEncoder();
     }
 
-    //하드코딩
-    @Value("http://localhost:8080")
+    //TODO : 나중에 EC2 옮길떄 바꿀것
+    @Value("${frontend.url:https://www.igo.ai.kr}")
+    //@Value("${frontend.url:http://localhost:3000}")
     private String frontendUrl;
 
     @Bean
@@ -70,6 +72,7 @@ public class SecurityConfig {
                                 "/greeting", // Greeting 페이지
                                 "/login/**", // 로그인 관련 경로
                                 "/oauth2/**", // OAuth2 관련 경로
+                                "/api/auth/refresh-token", // Refresh Token 엔드포인트
                                 "/error",     // 에러 페이지
                                 // 프론트엔드 정적 리소스 및 Next.js 내부 경로 (필요에 따라 추가)
                                 "/favicon.ico",
@@ -80,6 +83,7 @@ public class SecurityConfig {
                                 "/robots.txt",
                                 "/firebase-messaging-sw.js" // FCM 서비스 워커
                         ).permitAll()
+                        .requestMatchers("/app/v1/**", "/app/test/**").denyAll() // 프론트엔드 특정 경로 접근 완전 차단
                         .requestMatchers("/api/**").authenticated() // API 경로는 인증 필요
                         .anyRequest().authenticated() // 그 외 모든 요청은 인증 필요 (루트 포함)
                 )
@@ -91,13 +95,31 @@ public class SecurityConfig {
                             OAuth2AuthenticationToken oauthToken = (OAuth2AuthenticationToken) authentication;
                             OAuth2User oAuth2User = oauthToken.getPrincipal();
                             String email = oAuth2User.getAttribute("email");
-                            String token = jwtTokenProvider.createToken(email);
 
-                            Cookie cookie = new Cookie("access_token", token);
-                            cookie.setPath("/");
-                            cookie.setHttpOnly(false);
-                            cookie.setMaxAge(7200);
-                            response.addCookie(cookie);
+                            String accessToken = jwtTokenProvider.createAccessToken(email);
+                            String refreshToken = jwtTokenProvider.createRefreshToken(email);
+
+                            // User 엔티티에 Refresh Token 저장
+                            userRepository.findByEmail(email).ifPresent(user -> {
+                                user.setAppRefreshToken(refreshToken);
+                                user.setAppRefreshTokenExpiresAt(
+                                        LocalDateTime.now().plusSeconds(jwtTokenProvider.getRefreshTokenExpirationMillis() / 1000)
+                                );
+                                userRepository.save(user);
+                            });
+
+                            Cookie accessTokenCookie = new Cookie("access_token", accessToken);
+                            accessTokenCookie.setPath("/");
+                            accessTokenCookie.setHttpOnly(false); // JavaScript에서 접근 가능하도록 설정 (필요에 따라 true로 변경)
+                            accessTokenCookie.setMaxAge((int) (jwtTokenProvider.getAccessTokenExpirationHours() * 60 * 60)); // 초 단위
+                            response.addCookie(accessTokenCookie);
+
+                            Cookie refreshTokenCookie = new Cookie("refresh_token", refreshToken);
+                            refreshTokenCookie.setPath("/"); // API 경로에만 적용하려면 "/api" 등으로 변경 가능
+                            refreshTokenCookie.setHttpOnly(true);
+                            refreshTokenCookie.setSecure(request.isSecure()); // HTTPS에서만 전송
+                            refreshTokenCookie.setMaxAge((int) (jwtTokenProvider.getRefreshTokenExpirationMillis() / 1000)); // jwt.refresh 값을 초 단위로 설정
+                            response.addCookie(refreshTokenCookie);
 
                             response.sendRedirect(frontendUrl); // 로그인 성공 시 프론트엔드 루트로 리다이렉트
                         })
@@ -113,4 +135,3 @@ public class SecurityConfig {
         return http.build();
     }
 }
-

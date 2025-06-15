@@ -1,9 +1,9 @@
-// src/app/setting/page.tsx
 "use client";
 
 import NavBar from "@/components/common/topNav";
 import { useEffect, useState, useCallback } from "react";
-import { getNotificationSettings, updateNotificationSettings } from "@/api/userApi.js"; // 경로는 실제 프로젝트에 맞게 조정
+import { getNotificationSettings, updateNotificationSettings } from "@/api/userApi.js";
+// api import는 userApi.js에서 내부적으로 사용하므로 직접 사용하지 않아도 토큰 갱신 인터셉터를 위해 필요합니다
 
 interface NotificationSettingsDto {
   notificationsEnabled: boolean;
@@ -123,7 +123,7 @@ export default function SettingPage() {
             <div className="flex w-full items-center justify-between">
               <span className="text-[#999999] text-[15px]">푸시알림</span>
               <div className="flex items-center">
-                <span className="mr-[8px] text-[#999999] text-[15px]">전체 On/Off</span>
+                <span className="mr-[8px] text-[#999999] text-[15px]">전체 Off/On</span>
                 <div className="relative flex rounded-full overflow-hidden cursor-pointer">
                   <input
                       id="checkbox-all"

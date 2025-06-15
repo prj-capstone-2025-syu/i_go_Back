@@ -18,11 +18,12 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.data.domain.PageRequest;
 
 import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
-import java.util.Optional;
 import java.util.Map;
+import java.util.Optional;
 import java.util.stream.Collectors;
 
 @Slf4j
@@ -48,7 +49,9 @@ public class ScheduleService {
 
     // 루틴 기반 일정 생성 (종료 시간을 직접 받음)
     public Schedule createFromRoutine(Long userId, Long routineId, String title, LocalDateTime startTime,
-                                      LocalDateTime endTime, String location, String memo, String supplies, String category) {
+                                      LocalDateTime endTime, String startLocation, Double startX, Double startY,
+                                      String location, Double destinationX, Double destinationY,
+                                      String memo, String supplies, String category) {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new IllegalArgumentException("사용자를 찾을 수 없습니다. ID: " + userId));
 
@@ -71,7 +74,12 @@ public class ScheduleService {
                 .title(title)
                 .startTime(startTime)
                 .endTime(endTime)
+                .startLocation(startLocation)
+                .startX(startX)
+                .startY(startY)
                 .location(location)
+                .destinationX(destinationX)
+                .destinationY(destinationY)
                 .memo(memo)
                 .category(Category.valueOf(category.toUpperCase()))
                 .routineId(routineId)
@@ -99,7 +107,9 @@ public class ScheduleService {
 
     // 일정 수정
     public Schedule updateSchedule(Long userId, Long scheduleId, Long routineId, String title,
-                                   LocalDateTime startTime, LocalDateTime endTime, String location,
+                                   LocalDateTime startTime, LocalDateTime endTime,
+                                   String startLocation, Double startX, Double startY,
+                                   String location, Double destinationX, Double destinationY,
                                    String memo, String supplies, String category) {
         Schedule schedule = scheduleRepository.findById(scheduleId)
                 .orElseThrow(() -> new IllegalArgumentException("수정할 일정을 찾을 수 없습니다. ID: " + scheduleId));
@@ -124,7 +134,12 @@ public class ScheduleService {
         schedule.setTitle(title);
         schedule.setStartTime(startTime);
         schedule.setEndTime(endTime);
+        schedule.setStartLocation(startLocation);
+        schedule.setStartX(startX);
+        schedule.setStartY(startY);
         schedule.setLocation(location);
+        schedule.setDestinationX(destinationX);
+        schedule.setDestinationY(destinationY);
         schedule.setMemo(memo);
         schedule.setSupplies(supplies);
         schedule.setCategory(Category.valueOf(category.toUpperCase()));
@@ -391,4 +406,123 @@ public class ScheduleService {
             log.error("{} 알림 전송/저장 실패: 사용자 ID {}, 관련 ID {}. 오류: {}", notificationType, user.getId(), relatedId, e.getMessage(), e);
         }
     }
+
+    public List<Schedule> findSchedulesByArgs(Long userId, Map<String, Object> args) {
+        String title = (String) args.get("title");
+        String datetime = (String) args.get("datetime");
+        DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm");
+
+        // 1. 제목+시간 모두 있을 때
+        if (title != null && datetime != null) {
+            LocalDateTime dateTime = LocalDateTime.parse(datetime, formatter);
+            return findSchedulesByTitleAndTime(userId, title, dateTime);
+        }
+
+        // 2. 제목만 있을 때
+        if (title != null && datetime == null) {
+            return findSchedulesByTitle(userId, title);
+        }
+
+        // 3. 시간만 있을 때
+        if (title == null && datetime != null) {
+            LocalDateTime dateTime = LocalDateTime.parse(datetime, formatter);
+            return findSchedulesByTime(userId, dateTime);
+        }
+
+        // 4. 아무 정보도 없을 때 (오늘 일정 조회)
+        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime startTime = now.withHour(0).withMinute(0);
+        LocalDateTime endTime = now.withHour(23).withMinute(59);
+        return getSchedulesByDateRange(userId, startTime, endTime);
+    }
+
+    public Schedule createScheduleByArgs(Long userId, Map<String, Object> args) {
+        String title = (String) args.get("title");
+        String datetime = (String) args.get("datetime");
+        String location = (String) args.get("location");
+        String memo = (String) args.get("memo");
+        String category = (String) args.getOrDefault("category", "PERSONAL");
+        //String supplies = (String) args.getOrDefault("supplies", ""); // 준비물 파라미터 추가 -> 이건 물어봐야 하나?
+
+        DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm");
+        LocalDateTime startTime = LocalDateTime.parse(datetime, formatter);
+        LocalDateTime endTime = startTime.plusHours(1); // 기본 1시간
+
+        return createSchedule(userId, title, startTime, endTime, location, memo, category);
+    }
+
+    public boolean deleteScheduleByArgs(Long userId, Map<String, Object> args) {
+        String title = (String) args.get("title");
+        String datetime = (String) args.get("datetime");
+        DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm");
+
+        // 1. 제목+시간 모두 있을 때
+        if (title != null && datetime != null) {
+            LocalDateTime dateTime = LocalDateTime.parse(datetime, formatter);
+            List<Schedule> candidates = findSchedulesByTitleAndTime(userId, title, dateTime);
+            if (candidates.size() == 1) {
+                deleteSchedule(userId, candidates.get(0).getId());
+                return true;
+            }
+        }
+
+        // 2. 제목만 있을 때
+        if (title != null && datetime == null) {
+            List<Schedule> candidates = findSchedulesByTitle(userId, title);
+            if (candidates.size() == 1) {
+                deleteSchedule(userId, candidates.get(0).getId());
+                return true;
+            }
+        }
+
+        // 3. 시간만 있을 때
+        if (title == null && datetime != null) {
+            LocalDateTime dateTime = LocalDateTime.parse(datetime, formatter);
+            List<Schedule> candidates = findSchedulesByTime(userId, dateTime);
+            if (candidates.size() == 1) {
+                deleteSchedule(userId, candidates.get(0).getId());
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    public Schedule updateScheduleByArgs(Long userId, Map<String, Object> args) {
+        String title = (String) args.get("title");
+        String datetime = (String) args.get("datetime");
+        String location = (String) args.get("location");
+        String memo = (String) args.get("memo");
+        String category = (String) args.getOrDefault("category", "PERSONAL");
+
+        DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm");
+        LocalDateTime startTime = LocalDateTime.parse(datetime, formatter);
+        LocalDateTime endTime = startTime.plusHours(1); // 기본 1시간
+
+        // 기존 일정 찾기
+        List<Schedule> candidates = findSchedulesByTitleAndTime(userId, title, startTime);
+        if (candidates.size() != 1) {
+            throw new IllegalArgumentException("수정할 일정을 찾을 수 없습니다.");
+        }
+
+        Schedule schedule = candidates.get(0);
+        return updateSchedule(
+            userId,
+            schedule.getId(),
+            null, // routineId는 null로 설정
+            title,
+            startTime,
+            endTime,
+            "", // startLocation
+            0.0, // startX
+            0.0, // startY
+            location,
+            0.0, // destinationX
+            0.0, // destinationY
+            memo,
+            null, // supplies는 null로 설정
+            category
+        );
+    }
 }
+

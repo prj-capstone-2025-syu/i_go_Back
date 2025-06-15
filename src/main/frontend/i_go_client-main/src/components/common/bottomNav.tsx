@@ -1,14 +1,36 @@
 "use client";
 
 import Link from "next/link";
+import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 
 export default function QuickNav() {
+    const [isAuthenticated, setIsAuthenticated] = useState(false);
+    const router = useRouter();
+
+    // 페이지 로드시 토큰 확인
+    useEffect(() => {
+        // 쿠키에서 토큰 확인
+        const hasToken = document.cookie.includes('access_token');
+        setIsAuthenticated(hasToken);
+    }, []);
+
+    // 인증 상태에 따라 네비게이션 처리
+    const handleNavClick = (e: React.MouseEvent<HTMLAnchorElement>, path: string) => {
+        if (!isAuthenticated) {
+            e.preventDefault(); // 인증되지 않은 경우 기본 동작 방지
+            return false;
+        }
+    };
+
+
   return (
     <div className="bottom-nav-warpper relative grid grid-cols-3 bg-[#fff] w-full h-[69px] shadow-[1px_2px_6px_1px_rgba(0,0,0,0.25)]">
-      <Link
-        href="/calendar"
-        className="h-auto flex flex-col gap-y-[5px] items-center justify-center py-[5px] px-[12px] w-full bg-[#fff] border-[1px] border-[#dfdfdf] hover:border-[2px] hover:border-[#01274F] duration-300  hover:!bg-[#01274F] group"
-      >
+        <Link
+            href="/calendar"
+            className={`h-auto flex flex-col gap-y-[5px] items-center justify-center py-[5px] px-[12px] w-full bg-[#fff] border-[1px] border-[#dfdfdf] hover:border-[2px] hover:border-[#01274F] duration-300 hover:!bg-[#01274F] group ${!isAuthenticated ? 'opacity-50 pointer-events-none' : ''}`}
+            onClick={(e) => handleNavClick(e, '/calendar')}
+        >
         <svg
           className="w-[24px] h-[26px]"
           viewBox="0 0 24 26"
@@ -26,10 +48,11 @@ export default function QuickNav() {
           캘린더
         </p>
       </Link>
-      <Link
-        href="/"
-        className="h-auto flex flex-col gap-y-[5px] items-center justify-center py-[5px] px-[12px] w-full bg-[#fff] border-y-[1px] border-[#dfdfdf] hover:border-[2px] hover:border-[#01274F] duration-300  hover:!bg-[#01274F] group"
-      >
+        <Link
+            href="/"
+            className={`h-auto flex flex-col gap-y-[5px] items-center justify-center py-[5px] px-[12px] w-full bg-[#fff] border-y-[1px] border-[#dfdfdf] hover:border-[2px] hover:border-[#01274F] duration-300 hover:!bg-[#01274F] group ${!isAuthenticated ? 'opacity-50 pointer-events-none' : ''}`}
+            onClick={(e) => handleNavClick(e, '/')}
+        >
         <svg
           className="w-[24px] group"
           viewBox="0 0 50 50"
@@ -749,10 +772,11 @@ export default function QuickNav() {
           홈
         </p>
       </Link>
-      <Link
-        href="/mypage"
-        className="h-auto flex flex-col gap-y-[5px] items-center justify-center py-[5px] px-[12px] w-full bg-[#fff] border-[1px] border-[#dfdfdf] hover:border-[2px] hover:border-[#01274F] duration-300  hover:!bg-[#01274F] group"
-      >
+        <Link
+            href="/mypage"
+            className={`h-auto flex flex-col gap-y-[5px] items-center justify-center py-[5px] px-[12px] w-full bg-[#fff] border-y-[1px] border-[#dfdfdf] hover:border-[2px] hover:border-[#01274F] duration-300 hover:!bg-[#01274F] group ${!isAuthenticated ? 'opacity-50 pointer-events-none' : ''}`}
+            onClick={(e) => handleNavClick(e, '/')}
+        >
         <svg
           className="w-[24px]"
           viewBox="0 0 21 24"
