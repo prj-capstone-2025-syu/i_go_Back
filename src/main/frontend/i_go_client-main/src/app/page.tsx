@@ -614,7 +614,9 @@ const Home: FC = () => {
                           data-aos-delay="200"
                           className="w-full bg-[#fff] p-[15px] rounded-[6px] shadow-[0px_0px_5px_rgba(0,0,0,0.2)] mb-[22px] text-center"
                       >
-                        <p className="text-[#383838] text-[17px] font-[500]">가장 가까운 일정이 없습니다.</p>
+                        <p className="text-[#383838] text-center py-2">
+                          가장 가까운 일정이 없습니다.
+                        </p>
                       </div>
                   )}
 
@@ -682,8 +684,15 @@ const Home: FC = () => {
                                 출발지와 목적지가 정해지지 않았습니다!
                               </p>
                             </div>
+                        ) : (isEmptyLocation || (currentSchedule && (currentSchedule.startX == null || currentSchedule.startY == null || currentSchedule.destinationX == null || currentSchedule.destinationY == null))) ? (
+                            // 위치 정보가 없거나 좌표가 불충분한 경우 메시지 표시
+                            <div className="flex items-center justify-center py-3 px-4 bg-gray-50 rounded-md">
+                              <span className="text-amber-500 mr-2 text-lg">📍</span>
+                              <p className="text-[#383838] text-[15px] font-medium">
+                                출발지 또는 목적지 좌표 정보가 부족합니다!
+                              </p>
+                            </div>
                         ) : (
-                            // 대면 일정일 경우 이동시간 표시
                             <>
                               <div className="grid grid-cols-3">
                                 <div className="h-auto flex gap-x-[5px] items-center justify-center">
@@ -864,6 +873,9 @@ const Home: FC = () => {
                                   TMAP 빠른 길찾기
                                 </p>
                               </Link>
+                              <p className="text-xs text-gray-500 mb-2">
+                                (실제 도로 상황에 따라 소요시간이 다를 수 있습니다.)
+                              </p>
                             </>
                         )}
                         <div className="mt-[20px] mb-[13px] w-full h-[1px] bg-[#dfdfdf]"></div>

@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import React, { useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import NavBar from "@/components/common/topNav";
 import Link from "next/link";
@@ -492,6 +492,14 @@ export default function ScheduleDetail() {
                       출발지와 목적지가 정해지지 않았습니다!
                     </p>
                   </div>
+              ) : (isEmptyLocation || (schedule && (schedule.startX == null || schedule.startY == null || schedule.destinationX == null || schedule.destinationY == null))) ? (
+                  // 위치 정보가 없거나 좌표가 불충분한 경우 메시지 표시
+                  <div className="flex items-center justify-center py-3 px-4 bg-gray-50 rounded-md">
+                    <span className="text-amber-500 mr-2 text-lg">📍</span>
+                    <p className="text-[#383838] text-[15px] font-medium">
+                      출발지 또는 목적지 좌표 정보가 부족합니다!
+                    </p>
+                  </div>
               ) : (
                   // 대면 일정일 경우 이동시간 표시
                   <>
@@ -642,6 +650,9 @@ export default function ScheduleDetail() {
                           </p>
                         </Link>
                     )}
+                    <p className="text-xs text-gray-500 mb-2">
+                      (실제 도로 상황에 따라 소요시간이 다를 수 있습니다.)
+                    </p>
                   </>
               )}
               {/* 루틴 정보 섹션 */}
