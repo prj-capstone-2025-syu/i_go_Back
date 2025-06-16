@@ -22,7 +22,7 @@ export default function TestPage() {
     setCoordinates({ x, y });
   };
 
-  // API 키 확인 함수
+  // API 키 확인
   const checkKakaoApiKey = () => {
     const kakaoApiKey = process.env.NEXT_PUBLIC_KAKAO_API_KEY;
 
