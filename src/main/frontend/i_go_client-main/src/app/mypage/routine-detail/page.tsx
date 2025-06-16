@@ -12,6 +12,7 @@ interface RoutineItem {
   name: string;
   time: string;
   disabled: boolean;
+  timeError?: string; // 각 항목별 시간 오류 메시지 추가
 }
 
 export default function RoutineDetailPage() {
@@ -24,6 +25,7 @@ export default function RoutineDetailPage() {
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
   const [isDeletePopupOpen, setIsDeletePopupOpen] = useState<boolean>(false);
+  const [isLoading, setIsLoading] = useState(false); // 저장 로딩 상태 추가
 
   // 루틴 데이터 불러오기
   useEffect(() => {
@@ -86,9 +88,33 @@ export default function RoutineDetailPage() {
   ) => {
     const { name, value } = event.target;
     setRoutineItems(prevItems =>
-        prevItems.map(item =>
-            item.id === id ? { ...item, [name]: value } : item
-        )
+        prevItems.map(item => {
+          if (item.id === id) {
+            const updatedItem = { ...item, [name]: value };
+            if (name === "time") {
+              // 빈 문자열인 경우 에러 없음
+              if (value === "") {
+                updatedItem.timeError = undefined;
+              } else {
+                const numValue = parseFloat(value);
+                // 음수 체크
+                if (numValue < 0) {
+                  updatedItem.timeError = "시간은 음수가 될 수 없습니다.";
+                }
+                // 소수점 체크 (정수가 아닌 경우)
+                else if (!Number.isInteger(numValue)) {
+                  updatedItem.timeError = "정수를 입력해주세요.";
+                }
+                // 유효한 값인 경우
+                else {
+                  updatedItem.timeError = undefined;
+                }
+              }
+            }
+            return updatedItem;
+          }
+          return item;
+        })
     );
   };
 
@@ -99,11 +125,37 @@ export default function RoutineDetailPage() {
   // 루틴 저장 (API 연동)
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    setError(null); // 이전 에러 메시지 초기화
 
     if (!routineId) {
       setError("루틴 ID가 없습니다");
       return;
     }
+
+    // 기본 유효성 검사
+    if (!title.trim()) {
+      setError("루틴명을 입력해주세요.");
+      return;
+    }
+
+    // 할일 항목이 하나도 없는 경우 체크
+    if (routineItems.length === 0) {
+      setError("최소 하나의 할일을 추가해주세요.");
+      return;
+    }
+
+    if (routineItems.some(item => !item.name.trim() || !item.time.trim())) {
+      setError("모든 할일의 이름과 시간을 입력해주세요.");
+      return;
+    }
+
+    // handleChange에 의해 설정된 timeError가 있는지 확인
+    if (routineItems.some(item => item.timeError)) {
+      setError("시간 입력 값 중 유효하지 않은 항목이 있습니다. 각 항목 아래의 메시지를 확인해주세요.");
+      return;
+    }
+
+    setIsLoading(true);
 
     try {
       await updateRoutine(routineId, {
@@ -113,7 +165,9 @@ export default function RoutineDetailPage() {
       router.push("/mypage/routine");
     } catch (err) {
       console.error("루틴 저장 실패:", err);
-      alert("루틴 저장에 실패했습니다.");
+      setError("루틴 저장에 실패했습니다.");
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -134,7 +188,7 @@ export default function RoutineDetailPage() {
       router.push("/mypage/routine");
     } catch (err) {
       console.error("루틴 삭제 실패:", err);
-      alert("루틴 삭제에 실패했습니다.");
+      setError("루틴 삭제에 실패했습니다.");
     } finally {
       setIsDeletePopupOpen(false);
     }
@@ -160,6 +214,11 @@ export default function RoutineDetailPage() {
               <div className="w-full mx-auto py-[20px]">
                 <div className="igo-form-txt-wrap w-full">
                   <div className="igo-form-txt-wrap w-full">
+                    {error && (
+                        <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
+                          {error}
+                        </div>
+                    )}
                     <h2 className="user__title text-[20px] font-bold mb-[12px]">
                       루틴명
                     </h2>
@@ -201,13 +260,14 @@ export default function RoutineDetailPage() {
                                         required
                                         value={routine.name}
                                         onChange={(e) => handleChange(routine.id, e)}
+                                        placeholder="할일을 입력하세요"
                                         className="border-[1px] border-[#dfdfdf] bg-[#fff] px-[10px] py-[6px] rounded-[4px] w-full shadow-sm focus:ring-indigo-500 focus:border-indigo-500"
                                     />
                                   </div>
                                 </div>
                               </div>
 
-                              <div className="igo-form-input-wrap max-w-[90px]">
+                              <div className="igo-form-input-wrap max-w-[90px] relative">
                                 <div className="igo-form-input">
                                   <h3 className="text-[17px] tracking-[-0.8px] font-medium mb-1">
                                     수행시간 (분)
@@ -219,9 +279,19 @@ export default function RoutineDetailPage() {
                                         required
                                         value={routine.time}
                                         onChange={(e) => handleChange(routine.id, e)}
-                                        className="border-[1px] border-[#dfdfdf] bg-[#fff] px-[10px] py-[6px] rounded-[4px] w-full shadow-sm focus:ring-indigo-500 focus:border-indigo-500"
+                                        placeholder="10"
+                                        className={`border-[1px] bg-[#fff] px-[10px] py-[6px] rounded-[4px] w-full shadow-sm focus:ring-indigo-500 focus:border-indigo-500 ${routine.timeError ? 'border-red-500' : 'border-[#dfdfdf]'}`}
                                     />
                                   </div>
+                                  {routine.timeError && (
+                                      <div
+                                          className="absolute bg-white border border-red-500 text-red-700 px-3 py-3 rounded-md shadow-lg text-xs z-10 whitespace-nowrap"
+                                          style={{ top: 'calc(100% + 5px)', left: '0' }}
+                                      >
+                                        {routine.timeError}
+                                        <div className="absolute w-2 h-2 bg-white border-l border-t border-red-500 transform rotate-45" style={{ top: '-4px', left: '15px' }}></div>
+                                      </div>
+                                  )}
                                 </div>
                               </div>
 
@@ -232,7 +302,7 @@ export default function RoutineDetailPage() {
                                         handleRemoveRoutineItem(routine.id)
                                     }
                                     disabled={routine.disabled}
-                                    className="bg-red-500 hover:bg-red-700 text-white font-semibold py-2 px-4 rounded text-sm shadow-md whitespace-nowrap disabled:!bg-[#dfdfdf] "
+                                    className="bg-red-500 hover:bg-red-700 text-white font-semibold py-2 px-4 rounded text-sm shadow-md whitespace-nowrap disabled:!bg-[#dfdfdf]"
                                 >
                                   삭제
                                 </button>
@@ -269,10 +339,11 @@ export default function RoutineDetailPage() {
                         루틴 삭제
                       </button>
                       <button
-                          className="w-full hover:opacity-[0.7] cursor-pointer py-[10px] px-[5px] bg-[#01274F] border-[1px] border-[#01274F] rounded-[7px] text-[#fff] text-[15px] tracking-[-0.6px] font-[500]"
+                          className={`w-full hover:opacity-[0.7] cursor-pointer py-[10px] px-[5px] bg-[#01274F] border-[1px] border-[#01274F] rounded-[7px] text-[#fff] text-[15px] tracking-[-0.6px] font-[500] ${isLoading ? 'opacity-70' : ''}`}
                           type="submit"
+                          disabled={isLoading}
                       >
-                        루틴 저장
+                        {isLoading ? "저장 중..." : "루틴 저장"}
                       </button>
                     </div>
                   </div>
@@ -283,10 +354,10 @@ export default function RoutineDetailPage() {
         </div>
 
         <ConfirmPopup
-          isOpen={isDeletePopupOpen}
-          message={`루틴 '${title}'을 삭제하시겠습니까?`}
-          onConfirm={confirmDelete}
-          onCancel={() => setIsDeletePopupOpen(false)}
+            isOpen={isDeletePopupOpen}
+            message={`루틴 '${title}'을 삭제하시겠습니까?`}
+            onConfirm={confirmDelete}
+            onCancel={() => setIsDeletePopupOpen(false)}
         />
       </div>
   );
