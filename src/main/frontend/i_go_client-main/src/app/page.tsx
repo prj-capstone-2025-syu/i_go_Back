@@ -873,9 +873,6 @@ const Home: FC = () => {
                                   TMAP 빠른 길찾기
                                 </p>
                               </Link>
-                              <p className="text-xs text-gray-500 mb-2">
-                                (실제 도로 상황에 따라 소요시간이 다를 수 있습니다.)
-                              </p>
                             </>
                         )}
                         <div className="mt-[20px] mb-[13px] w-full h-[1px] bg-[#dfdfdf]"></div>

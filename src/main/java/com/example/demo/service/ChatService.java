@@ -208,7 +208,8 @@ public class ChatService {
             scheduleRequest.setEndTime(dateTime.plusHours(1)); // 예시: 1시간짜리 일정
 
             scheduleRequest.setLocation((String) slots.get("location"));
-            scheduleRequest.setMemo((String) slots.getOrDefault("memo", ""));
+            scheduleRequest.setMemo((String) slots.getOrDefault("memo", "")); // memo 추가
+            scheduleRequest.setSupplies((String) slots.getOrDefault("supplies", "")); // supplies 추가
             scheduleRequest.setCategory("PERSONAL"); // 기본값 설정
 
             Schedule schedule = scheduleService.createSchedule(
@@ -218,7 +219,8 @@ public class ChatService {
                 scheduleRequest.getEndTime(),
                 scheduleRequest.getLocation(),
                 scheduleRequest.getMemo(),
-                scheduleRequest.getCategory()
+                scheduleRequest.getCategory(),
+                scheduleRequest.getSupplies() // supplies 전달
             );
 
             return ChatResponse.builder()
@@ -376,3 +378,6 @@ public class ChatService {
         }
     }
 }
+
+
+
