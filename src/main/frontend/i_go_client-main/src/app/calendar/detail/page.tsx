@@ -650,9 +650,6 @@ export default function ScheduleDetail() {
                           </p>
                         </Link>
                     )}
-                    <p className="text-xs text-gray-500 mb-2">
-                      (실제 도로 상황에 따라 소요시간이 다를 수 있습니다.)
-                    </p>
                   </>
               )}
               {/* 루틴 정보 섹션 */}

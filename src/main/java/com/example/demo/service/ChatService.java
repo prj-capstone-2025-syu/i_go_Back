@@ -60,6 +60,7 @@ public class ChatService {
 
             // 디버깅을 위한 로그 추가
             log.debug("Exaone response - intent: {}, response: {}", intentRaw, responseText);
+            log.info("Exaone API response raw slots: {}", slots); // Log the raw slots from Exaone
 
             // intent가 없으면 자연어 답변만 반환
             if (intentRaw == null) {
@@ -198,17 +199,81 @@ public class ChatService {
 
     private ChatResponse handleCreateSchedule(Long userId, Map<String, Object> slots) {
         try {
+            // Log the entire slots map to understand its structure
+            log.debug("Handling CREATE_SCHEDULE with slots: {}", slots);
+
             CreateScheduleRequest scheduleRequest = new CreateScheduleRequest();
-            scheduleRequest.setTitle((String) slots.get("title"));
+            if (slots != null) {
+                scheduleRequest.setTitle((String) slots.get("title"));
+                scheduleRequest.setLocation((String) slots.get("location"));
 
-            // EXAONE 응답에 맞게 datetime 필드 사용
-            DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm");
-            LocalDateTime dateTime = LocalDateTime.parse((String) slots.get("datetime"), formatter);
-            scheduleRequest.setStartTime(dateTime);
-            scheduleRequest.setEndTime(dateTime.plusHours(1)); // 예시: 1시간짜리 일정
+                // EXAONE 응답에 맞게 datetime 필드 사용
+                Object datetimeObj = slots.get("datetime");
+                if (datetimeObj instanceof String) {
+                    DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm");
+                    LocalDateTime dateTime = LocalDateTime.parse((String) datetimeObj, formatter);
+                    scheduleRequest.setStartTime(dateTime);
+                    scheduleRequest.setEndTime(dateTime.plusHours(1)); // 예시: 1시간짜리 일정
+                } else {
+                    log.warn("Datetime field is missing or not a String in slots: {}", slots);
+                    // Consider setting a default or throwing an error
+                }
 
-            scheduleRequest.setLocation((String) slots.get("location"));
-            scheduleRequest.setMemo((String) slots.getOrDefault("memo", ""));
+                String memo = "";
+                Object memoVal = slots.get("memo");
+                if (memoVal instanceof String && !((String) memoVal).isEmpty()) {
+                    memo = (String) memoVal;
+                } else {
+                    Object notesVal = slots.get("notes");
+                    if (notesVal instanceof String && !((String) notesVal).isEmpty()) {
+                        memo = (String) notesVal;
+                        log.debug("ChatService: Used 'notes' from Exaone slots for memo. Value: '{}'", memo);
+                    } else {
+                        Object descriptionVal = slots.get("description");
+                        if (descriptionVal instanceof String && !((String) descriptionVal).isEmpty()) {
+                            memo = (String) descriptionVal;
+                            log.debug("ChatService: Used 'description' from Exaone slots for memo. Value: '{}'", memo);
+                        }
+                    }
+                }
+                scheduleRequest.setMemo(memo);
+
+                String supplies = "";
+                Object suppliesVal = slots.get("supplies");
+                if (suppliesVal instanceof String && !((String) suppliesVal).isEmpty()) {
+                    supplies = (String) suppliesVal;
+                } else if (suppliesVal instanceof List) {
+                    try {
+                        List<?> list = (List<?>) suppliesVal;
+                        supplies = list.stream().map(Object::toString).collect(java.util.stream.Collectors.joining(", "));
+                        if (!supplies.isEmpty()) log.debug("ChatService: Used 'supplies' (List) from Exaone slots. Value: '{}'", supplies);
+                    } catch (Exception e) { log.warn("ChatService: Error processing 'supplies' as List from Exaone slots: {}", e.getMessage());}
+                }
+
+                if (supplies.isEmpty()) {
+                    Object itemsVal = slots.get("items");
+                    if (itemsVal instanceof String && !((String) itemsVal).isEmpty()) {
+                        supplies = (String) itemsVal;
+                        if (!supplies.isEmpty()) log.debug("ChatService: Used 'items' (String) from Exaone slots for supplies. Value: '{}'", supplies);
+                    } else if (itemsVal instanceof List) {
+                        try {
+                            List<?> list = (List<?>) itemsVal;
+                            supplies = list.stream().map(Object::toString).collect(java.util.stream.Collectors.joining(", "));
+                            if (!supplies.isEmpty()) log.debug("ChatService: Used 'items' (List) from Exaone slots for supplies. Value: '{}'", supplies);
+                        } catch (Exception e) { log.warn("ChatService: Error processing 'items' as List from Exaone slots: {}", e.getMessage());}
+                    }
+                }
+                scheduleRequest.setSupplies(supplies);
+                log.debug("Extracted memo: '{}', supplies: '{}' from slots after checking fallbacks", memo, supplies);
+
+            } else {
+                log.warn("Slots map is null in handleCreateSchedule. Cannot extract schedule details.");
+                // Return an error response or a response indicating missing information
+                return ChatResponse.builder()
+                        .message("일정 생성에 필요한 정보가 부족합니다.")
+                        .success(false)
+                        .build();
+            }
             scheduleRequest.setCategory("PERSONAL"); // 기본값 설정
 
             Schedule schedule = scheduleService.createSchedule(
@@ -218,7 +283,8 @@ public class ChatService {
                 scheduleRequest.getEndTime(),
                 scheduleRequest.getLocation(),
                 scheduleRequest.getMemo(),
-                scheduleRequest.getCategory()
+                scheduleRequest.getCategory(),
+                scheduleRequest.getSupplies() // supplies 전달
             );
 
             return ChatResponse.builder()
@@ -229,6 +295,7 @@ public class ChatService {
                     .success(true)
                     .build();
         } catch (Exception e) {
+            log.error("Error creating schedule: {}", e.getMessage(), e); // Log specific error
             return ChatResponse.builder()
                     .message("일정 생성 중 오류가 발생했습니다: " + e.getMessage())
                     .success(false)

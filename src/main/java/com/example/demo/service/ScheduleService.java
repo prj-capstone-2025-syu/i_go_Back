@@ -201,7 +201,10 @@ public class ScheduleService {
     }
 
     public Schedule createSchedule(Long userId, String title, LocalDateTime startTime,
-                                   LocalDateTime endTime, String location, String memo, String category) {
+                                   LocalDateTime endTime, String location, String memo, String category, String supplies) { // supplies 파라미터 추가
+        // Log the received memo value
+        log.info("ScheduleService.createSchedule called with memo: '{}'", memo);
+
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new IllegalArgumentException("사용자를 찾을 수 없습니다. ID: " + userId));
 
@@ -214,9 +217,10 @@ public class ScheduleService {
                 .startTime(startTime)
                 .endTime(endTime)
                 .location(location)
-                .memo(memo)
+                .memo(memo) // memo 설정
                 .category(Category.valueOf(category.toUpperCase()))
                 .user(user)
+                .supplies(supplies) // supplies 설정
                 .status(Schedule.ScheduleStatus.PENDING)
                 .build();
 
@@ -426,7 +430,10 @@ public class ScheduleService {
         // 3. 시간만 있을 때
         if (title == null && datetime != null) {
             LocalDateTime dateTime = LocalDateTime.parse(datetime, formatter);
-            return findSchedulesByTime(userId, dateTime);
+            // 해당 날짜의 00:00:00 부터 23:59:59.999999999 까지 조회하도록 수정
+            LocalDateTime startTime = dateTime.toLocalDate().atStartOfDay();
+            LocalDateTime endTime = dateTime.toLocalDate().atTime(23, 59, 59, 999999999);
+            return getSchedulesByDateRange(userId, startTime, endTime);
         }
 
         // 4. 아무 정보도 없을 때 (오늘 일정 조회)
@@ -437,18 +444,62 @@ public class ScheduleService {
     }
 
     public Schedule createScheduleByArgs(Long userId, Map<String, Object> args) {
+        log.info("ScheduleService.createScheduleByArgs received args: {}", args); // Log the received arguments map
         String title = (String) args.get("title");
         String datetime = (String) args.get("datetime");
         String location = (String) args.get("location");
-        String memo = (String) args.get("memo");
+
+        String memo = "";
+        Object memoVal = args.get("memo");
+        if (memoVal instanceof String && !((String) memoVal).isEmpty()) {
+            memo = (String) memoVal;
+        } else {
+            Object notesVal = args.get("notes");
+            if (notesVal instanceof String && !((String) notesVal).isEmpty()) {
+                memo = (String) notesVal;
+                log.info("Used 'notes' field for memo. Memo value: '{}'", memo);
+            } else {
+                Object descriptionVal = args.get("description");
+                if (descriptionVal instanceof String && !((String) descriptionVal).isEmpty()) {
+                    memo = (String) descriptionVal;
+                    log.info("Used 'description' field for memo. Memo value: '{}'", memo);
+                }
+            }
+        }
+
         String category = (String) args.getOrDefault("category", "PERSONAL");
-        //String supplies = (String) args.getOrDefault("supplies", ""); // 준비물 파라미터 추가 -> 이건 물어봐야 하나?
+
+        String supplies = "";
+        Object suppliesVal = args.get("supplies");
+        if (suppliesVal instanceof String && !((String) suppliesVal).isEmpty()) {
+            supplies = (String) suppliesVal;
+        } else if (suppliesVal instanceof List) {
+            try {
+                List<?> list = (List<?>) suppliesVal;
+                supplies = list.stream().map(Object::toString).collect(Collectors.joining(", "));
+                if (!supplies.isEmpty()) log.info("Used 'supplies' (List) field. Supplies value: '{}'", supplies);
+            } catch (Exception e) { log.warn("Error processing 'supplies' as List: {}", e.getMessage()); }
+        }
+
+        if (supplies.isEmpty()) {
+            Object itemsVal = args.get("items");
+            if (itemsVal instanceof String && !((String) itemsVal).isEmpty()) {
+                supplies = (String) itemsVal;
+                if (!supplies.isEmpty()) log.info("Used 'items' (String) field for supplies. Supplies value: '{}'", supplies);
+            } else if (itemsVal instanceof List) {
+                try {
+                    List<?> list = (List<?>) itemsVal;
+                    supplies = list.stream().map(Object::toString).collect(Collectors.joining(", "));
+                    if (!supplies.isEmpty()) log.info("Used 'items' (List) field for supplies. Supplies value: '{}'", supplies);
+                } catch (Exception e) { log.warn("Error processing 'items' as List: {}", e.getMessage()); }
+            }
+        }
 
         DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm");
         LocalDateTime startTime = LocalDateTime.parse(datetime, formatter);
         LocalDateTime endTime = startTime.plusHours(1); // 기본 1시간
 
-        return createSchedule(userId, title, startTime, endTime, location, memo, category);
+        return createSchedule(userId, title, startTime, endTime, location, memo, category, supplies); // supplies 전달
     }
 
     public boolean deleteScheduleByArgs(Long userId, Map<String, Object> args) {
