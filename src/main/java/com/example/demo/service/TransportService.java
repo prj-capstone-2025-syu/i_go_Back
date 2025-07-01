@@ -307,8 +307,6 @@ public class TransportService {
 
     /**
      * 대중교통 이동시간 계산 (내부용 - 락 보호 하에서 호출)
-     *
-     * ⚠️ 임시 주석 처리: API 호출 제한으로 인한 조치
      */
     private Integer calculateTransitTimeInternal(TransportTimeRequest request) {
         //log.info("🚌 대중교통 API 호출 - 임시로 null 반환 (API 제한으로 인해 주석 처리됨)");
