@@ -39,7 +39,7 @@ public class OAuth2UserService extends DefaultOAuth2UserService {
         // Google Access Token 정보 추출
         String accessToken = userRequest.getAccessToken().getTokenValue();
         LocalDateTime expiresAt = userRequest.getAccessToken().getExpiresAt() != null
-                ? LocalDateTime.ofInstant(userRequest.getAccessToken().getExpiresAt(), java.time.ZoneId.systemDefault())
+                ? LocalDateTime.ofInstant(userRequest.getAccessToken().getExpiresAt(), java.time.ZoneId.systemDefault()).plusHours(1) // 1시간 추가
                 : null;
 
         // 애플리케이션 자체 Refresh Token 생성 (JwtTokenProvider를 통해 생성해야 하지만, 여기서는 우선 null로 처리하고 SecurityConfig에서 생성된 값을 받아와야 함)
