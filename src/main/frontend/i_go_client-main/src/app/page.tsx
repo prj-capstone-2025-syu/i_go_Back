@@ -485,20 +485,39 @@ const Home: FC = () => {
     }
   }, [getCurrentSchedule]);
 
-  // Tmap 링크 생성 함수
-  const generateTmapDirectionLink = (currentSchedule: ScheduleType | null) => {
-    if (!currentSchedule) return "#";
+  // Tmap 링크 클릭 핸들러
+  const handleTmapNavigation = () => {
+    if (!currentSchedule) return;
 
-    // 출발지와 목적지 좌표가 있는지 확인
     const hasStartCoords = currentSchedule.startX != null && currentSchedule.startY != null;
     const hasDestCoords = currentSchedule.destinationX != null && currentSchedule.destinationY != null;
 
-    if (hasStartCoords && hasDestCoords) {
-      return `https://map.kakao.com/?map_type=TYPE_MAP&target=car&rt=${currentSchedule.startY},${currentSchedule.startX},${currentSchedule.destinationY},${currentSchedule.destinationX}&rt1=${encodeURIComponent(currentSchedule.startLocation || '출발지')}&rt2=${encodeURIComponent(currentSchedule.location || '도착지')}&rtIds=,&rtTypes=,`;
-    }
+    // User Agent를 통해 모바일 환경인지 확인
+    const isMobile = /Mobi/i.test(navigator.userAgent);
 
-    // 좌표가 없으면 기본 링크 반환
-    return "https://map.kakao.com/?map_type=TYPE_MAP&target=car";
+    if (hasStartCoords && hasDestCoords) {
+      if (isMobile) {
+        // 모바일: TMAP 앱으로 길찾기
+        const destName = encodeURIComponent(currentSchedule.location || '도착지');
+        const tmapAppUrl = `tmap://route?name=${destName}&startx=${currentSchedule.startX}&starty=${currentSchedule.startY}&goalx=${currentSchedule.destinationX}&goaly=${currentSchedule.destinationY}&reqCoordType=WGS84&resCoordType=WGS84`;
+        window.location.href = tmapAppUrl;
+      } else {
+        // PC: Naver 지도로 길찾기
+        const startName = encodeURIComponent(currentSchedule.startLocation || '출발지');
+        const destName = encodeURIComponent(currentSchedule.location || '도착지');
+        const naverMapUrl = `https://map.naver.com/v5/directions/${currentSchedule.startX},${currentSchedule.startY},${startName}/${currentSchedule.destinationX},${currentSchedule.destinationY},${destName}/-/transit`;
+        window.open(naverMapUrl, '_blank');
+      }
+    } else {
+      // 좌표가 없을 때
+      if (isMobile) {
+        // 모바일: TMAP 앱 실행
+        window.location.href = "tmap://open";
+      } else {
+        // PC: Naver 지도 웹사이트 열기
+        window.open("https://map.naver.com", '_blank');
+      }
+    }
   };
 
   // 이동 시간 포맷팅 함수 추가
@@ -831,9 +850,8 @@ const Home: FC = () => {
                                   )}
                                 </div>
                               </div>
-                              <Link
-                                  href={generateTmapDirectionLink(currentSchedule)}
-                                  target="_blank"
+                              <button
+                                  onClick={handleTmapNavigation}
                                   className="px-[5px] py-[10px] border-[#dfdfdf] border-[1px] rounded-[5px] hover:opacity-[0.7] w-full flex items-center justify-center gap-x-[5px] mt-[10px]"
                               >
                                 <svg
@@ -872,7 +890,7 @@ const Home: FC = () => {
                                 <p className="text-[#383838] text-[14px] tracking-[-0.2px] font-[400]">
                                   TMAP 빠른 길찾기
                                 </p>
-                              </Link>
+                              </button>
                             </>
                         )}
                         <div className="mt-[20px] mb-[13px] w-full h-[1px] bg-[#dfdfdf]"></div>
