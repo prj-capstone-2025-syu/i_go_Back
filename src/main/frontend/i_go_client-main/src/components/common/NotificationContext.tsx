@@ -137,6 +137,41 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
         return () => clearInterval(intervalId);
     }, [checkedItems, hasToken]); // hasToken 의존성 추가
 
+    // Android FCM 토큰 처리를 위한 함수
+    const sendAndroidFCMTokenToServer = async (token: string) => {
+        try {
+            const accessToken = localStorage.getItem('access_token') ||
+                              document.cookie.split('; ').find(row => row.startsWith('access_token='))?.split('=')[1];
+
+            if (!accessToken) {
+                console.log('인증 토큰이 없어 FCM 토큰 전송을 건너뜁니다.');
+                return;
+            }
+
+            // axios를 사용하여 API 호출 (기존 구조 활용)
+            const api = (await import('@/api/axiosConfig')).default;
+
+            const response = await api.post('/user/fcm-token', {
+                fcmToken: token,
+                platform: 'android'
+            });
+
+            if (response.status === 200) {
+                console.log('Android FCM 토큰이 서버로 전송되었습니다:', token);
+                console.log('서버 응답:', response.data);
+            }
+        } catch (error) {
+            console.error('FCM 토큰 전송 중 오류:', error);
+
+            // TypeScript 타입 가드를 사용한 안전한 error 처리
+            if (error && typeof error === 'object' && 'response' in error) {
+                const axiosError = error as { response: { data: any; status: number } };
+                console.error('서버 오류 응답:', axiosError.response.data);
+                console.error('오류 상태 코드:', axiosError.response.status);
+            }
+        }
+    };
+
     return (
         <NotificationContext.Provider
             value={{
