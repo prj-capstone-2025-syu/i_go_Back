@@ -287,8 +287,9 @@ public class ScheduleService {
                         .findByUserAndRelatedIdAndNotificationType(user, schedule.getId(), NOTIFICATION_TYPE_SUPPLIES_REMINDER);
 
                 if (existingSuppliesNotification.isEmpty()) {
-                    String title = "준비물 알림";
-                    String body = "'" + schedule.getTitle() + "' 일정에 필요한 준비물: " + schedule.getSupplies();
+                    String title = "🎒 준비물 체크";
+                    String body = String.format("'%s'이(가) %d분 후 시작돼요!\n📋 준비물: %s",
+                        schedule.getTitle(), SUPPLIES_NOTIFICATION_MINUTES_BEFORE, schedule.getSupplies());
                     Map<String, String> data = new HashMap<>();
                     data.put("scheduleId", schedule.getId().toString());
                     data.put("type", NOTIFICATION_TYPE_SUPPLIES_REMINDER);
@@ -303,8 +304,21 @@ public class ScheduleService {
                         .findByUserAndRelatedIdAndNotificationType(user, schedule.getId(), NOTIFICATION_TYPE_SCHEDULE_START);
 
                 if (existingScheduleStartNotification.isEmpty()) {
-                    String title = "일정 시작 알림";
-                    String body = "'" + schedule.getTitle() + "' 일정이 지금 시작됩니다!";
+                    String title = "🚀 일정 시작";
+                    StringBuilder bodyBuilder = new StringBuilder();
+                    bodyBuilder.append(String.format("'%s'이(가) 지금 시작돼요!", schedule.getTitle()));
+
+                    // 도착지 정보 추가
+                    if (schedule.getLocation() != null && !schedule.getLocation().trim().isEmpty()) {
+                        bodyBuilder.append(String.format("\n📍 도착지: %s", schedule.getLocation()));
+                    }
+
+                    // 시작 위치 정보도 있다면 추가
+                    if (schedule.getStartLocation() != null && !schedule.getStartLocation().trim().isEmpty()) {
+                        bodyBuilder.append(String.format("\n🏠 출발지: %s", schedule.getStartLocation()));
+                    }
+
+                    String body = bodyBuilder.toString();
                     Map<String, String> data = new HashMap<>();
                     data.put("scheduleId", schedule.getId().toString());
                     data.put("type", NOTIFICATION_TYPE_SCHEDULE_START);
@@ -351,9 +365,8 @@ public class ScheduleService {
                             .findByUserAndRelatedIdAndNotificationType(user, itemTime.getRoutineItemId(), NOTIFICATION_TYPE_ROUTINE_ITEM_START);
 
                     if (existingRoutineItemNotification.isEmpty()) {
-                        String title = "'" + schedule.getTitle() + "' 진행 중";
-                        // String body = "루틴: '" + itemTime.getRoutineItemName() + "' 시작 시간입니다."; // 기존 메시지
-                        String body = itemTime.getRoutineItemName() + " 시작"; // 요청된 메시지 형식
+                        String title = String.format("📋 %s", schedule.getTitle());
+                        String body = String.format("🎯 %s 할 시간이에요!", itemTime.getRoutineItemName());
                         Map<String, String> data = new HashMap<>();
                         data.put("scheduleId", schedule.getId().toString());
                         data.put("routineId", itemTime.getRoutineId().toString());
