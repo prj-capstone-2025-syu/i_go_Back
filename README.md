@@ -49,32 +49,6 @@
 
 ---
 
-## 프론트엔드 실행 방법
-
-### 1. 프론트엔드 디렉토리로 이동
-
-```bash
-cd src/main/frontend/i_go_client-main
-```
-
-### 2. 의존성 설치
-
-```bash
-npm install
-# 또는
-yarn
-```
-
-### 3. 개발 서버 실행
-
-```bash
-npm run dev
-# 또는
-yarn dev
-```
-
-> 브라우저에서 `http://localhost:3000`에 접속
-
 
 ## MySQL Workbench로 RDS DB 접속 방법
 
