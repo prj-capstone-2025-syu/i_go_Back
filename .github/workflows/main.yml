@@ -2,7 +2,7 @@ name: Spring Boot Blue-Green Deploy
 
 on:
   push:
-    branches: [ main ]
+    branches: [ master ]
 
 jobs:
   build-and-deploy:
