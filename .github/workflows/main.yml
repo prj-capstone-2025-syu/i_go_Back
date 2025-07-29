@@ -65,7 +65,7 @@ jobs:
           key: ${{ secrets.EC2_SSH_KEY }}
           script: |
             cd /home/ubuntu/igo
-            docker load -i backend-image.tar
+            sudo docker load -i backend-image.tar
             
             # 현재 활성화된 포트 확인 (타겟 파일 읽기)
             # 파일이 없거나 Blue 포트(8080)일 경우 Blue로 간주
@@ -82,7 +82,7 @@ jobs:
             echo "Active: $ACTIVE_CONTAINER, Deploying: $NEW_CONTAINER to port $NEW_PORT"
             
             # 새 컨테이너 시작
-            docker run -d \
+            sudo docker run -d \
               --name $NEW_CONTAINER \
               -p $NEW_PORT:8080 \
               --restart unless-stopped \
@@ -95,7 +95,7 @@ jobs:
             if curl -f http://localhost:$NEW_PORT/actuator/health; then
               echo "Health check passed. Switching traffic..."
               
-              # ✅ [변경점] Nginx 타겟 파일 덮어쓰기 (안전한 방식)
+              # Nginx 타겟 파일 덮어쓰기
               echo "server 127.0.0.1:$NEW_PORT;" | sudo tee ${{ env.NGINX_TARGET_FILE }}
               
               # Nginx 설정 리로드
@@ -103,17 +103,17 @@ jobs:
               
               # 기존 컨테이너 정리
               sleep 5
-              if docker ps | grep -q $ACTIVE_CONTAINER; then
-                docker stop $ACTIVE_CONTAINER || true
-                docker rm $ACTIVE_CONTAINER || true
+              if sudo docker ps | grep -q $ACTIVE_CONTAINER; then
+                sudo docker stop $ACTIVE_CONTAINER || true
+                sudo docker rm $ACTIVE_CONTAINER || true
               fi
               
               echo "Blue-Green deployment completed successfully!"
             else
               echo "Health check failed. Rolling back..."
-              docker stop $NEW_CONTAINER || true
-              docker rm $NEW_CONTAINER || true
+              sudo docker stop $NEW_CONTAINER || true
+              sudo docker rm $NEW_CONTAINER || true
               exit 1
             fi
             
-            docker image prune -f
+            sudo docker image prune -f
