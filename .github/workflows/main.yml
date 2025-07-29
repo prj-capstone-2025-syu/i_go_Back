@@ -1,0 +1,119 @@
+name: Spring Boot Blue-Green Deploy
+
+on:
+  push:
+    branches: [ main ]
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    env:
+      SPRING_PROFILES_ACTIVE: prod
+      IMAGE_NAME: igo-backend
+      CONTAINER_BLUE: backend-blue
+      CONTAINER_GREEN: backend-green
+      NGINX_TARGET_FILE: /etc/nginx/conf.d/backend.target # 타겟 파일 경로를 변수로 관리
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Generate application.properties from secret
+        run: |
+          mkdir -p ./src/main/resources
+          cat <<EOF > ./src/main/resources/application.properties
+          ${{ secrets.APPLICATION_PROPERTIES }}
+          EOF
+
+      - name: Generate Firebase Admin SDK JSON from secret
+        run: |
+          mkdir -p ./src/main/resources/firebase
+          echo '${{ secrets.FIREBASE_ADMINSDK_JSON }}' > ./src/main/resources/firebase/igo-project-56559-firebase-adminsdk-fbsvc-ddd43a3897.json
+
+      - name: Set up JDK
+        uses: actions/setup-java@v3
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Grant execute permission to Gradle
+        run: chmod +x ./gradlew
+
+      - name: Build with Gradle (Skip Tests)
+        run: ./gradlew clean build -x test --no-daemon
+
+      - name: Build Docker Image
+        run: |
+          docker build -t ${{ env.IMAGE_NAME }}:${{ github.sha }} .
+          docker save ${{ env.IMAGE_NAME }}:${{ github.sha }} -o backend-image.tar
+
+      - name: Copy Docker Image to EC2
+        uses: appleboy/scp-action@v0.1.4
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          source: "backend-image.tar"
+          target: "/home/ubuntu/igo"
+
+      - name: Blue-Green Deploy on EC2
+        uses: appleboy/ssh-action@v1.0.0
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            cd /home/ubuntu/igo
+            docker load -i backend-image.tar
+            
+            # 현재 활성화된 포트 확인 (타겟 파일 읽기)
+            # 파일이 없거나 Blue 포트(8080)일 경우 Blue로 간주
+            if ! grep -q "8081" ${{ env.NGINX_TARGET_FILE }}; then
+              ACTIVE_CONTAINER=${{ env.CONTAINER_BLUE }}
+              NEW_CONTAINER=${{ env.CONTAINER_GREEN }}
+              NEW_PORT=8081
+            else
+              ACTIVE_CONTAINER=${{ env.CONTAINER_GREEN }}
+              NEW_CONTAINER=${{ env.CONTAINER_BLUE }}
+              NEW_PORT=8080
+            fi
+
+            echo "Active: $ACTIVE_CONTAINER, Deploying: $NEW_CONTAINER to port $NEW_PORT"
+            
+            # 새 컨테이너 시작
+            docker run -d \
+              --name $NEW_CONTAINER \
+              -p $NEW_PORT:8080 \
+              --restart unless-stopped \
+              ${{ env.IMAGE_NAME }}:${{ github.sha }}
+            
+            echo "Waiting for health check..."
+            sleep 30
+            
+            # 헬스체크
+            if curl -f http://localhost:$NEW_PORT/actuator/health; then
+              echo "Health check passed. Switching traffic..."
+              
+              # ✅ [변경점] Nginx 타겟 파일 덮어쓰기 (안전한 방식)
+              echo "server 127.0.0.1:$NEW_PORT;" | sudo tee ${{ env.NGINX_TARGET_FILE }}
+              
+              # Nginx 설정 리로드
+              sudo nginx -t && sudo systemctl reload nginx
+              
+              # 기존 컨테이너 정리
+              sleep 5
+              if docker ps | grep -q $ACTIVE_CONTAINER; then
+                docker stop $ACTIVE_CONTAINER || true
+                docker rm $ACTIVE_CONTAINER || true
+              fi
+              
+              echo "Blue-Green deployment completed successfully!"
+            else
+              echo "Health check failed. Rolling back..."
+              docker stop $NEW_CONTAINER || true
+              docker rm $NEW_CONTAINER || true
+              exit 1
+            fi
+            
+            docker image prune -f
