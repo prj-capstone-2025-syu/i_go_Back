@@ -67,23 +67,27 @@ jobs:
             cd /home/ubuntu/igo
             sudo docker load -i backend-image.tar
             
+            # Blue와 Green 컨테이너의 고정 포트 설정
+            BLUE_PORT=8080
+            GREEN_PORT=8081
+            
             # 현재 실행 중인 컨테이너 확인
             if sudo docker ps | grep -q ${{ env.CONTAINER_BLUE }}; then
               ACTIVE_CONTAINER=${{ env.CONTAINER_BLUE }}
               NEW_CONTAINER=${{ env.CONTAINER_GREEN }}
-              NEW_PORT=8081
-              echo "Blue is currently active, deploying Green on port 8081"
+              NEW_PORT=$GREEN_PORT
+              echo "Blue is currently active on port $BLUE_PORT, deploying Green on port $GREEN_PORT"
             elif sudo docker ps | grep -q ${{ env.CONTAINER_GREEN }}; then
               ACTIVE_CONTAINER=${{ env.CONTAINER_GREEN }}
               NEW_CONTAINER=${{ env.CONTAINER_BLUE }}
-              NEW_PORT=8080
-              echo "Green is currently active, deploying Blue on port 8080"
+              NEW_PORT=$BLUE_PORT
+              echo "Green is currently active on port $GREEN_PORT, deploying Blue on port $BLUE_PORT"
             else
               # 처음 배포인 경우
               ACTIVE_CONTAINER=""
               NEW_CONTAINER=${{ env.CONTAINER_BLUE }}
-              NEW_PORT=8080
-              echo "No active container found, deploying Blue on port 8080"
+              NEW_PORT=$BLUE_PORT
+              echo "No active container found, deploying Blue on port $BLUE_PORT"
             fi
 
             echo "Active: $ACTIVE_CONTAINER, Deploying: $NEW_CONTAINER to port $NEW_PORT"
