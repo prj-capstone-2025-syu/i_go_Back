@@ -89,7 +89,7 @@ jobs:
               ${{ env.IMAGE_NAME }}:${{ github.sha }}
             
             echo "Waiting for health check..."
-            sleep 60
+            sleep 200
             
             # 헬스체크
             if curl -f http://localhost:$NEW_PORT/actuator/health; then
