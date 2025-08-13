@@ -42,9 +42,7 @@ public class OAuth2UserService extends DefaultOAuth2UserService {
                 ? LocalDateTime.ofInstant(userRequest.getAccessToken().getExpiresAt(), java.time.ZoneId.systemDefault()).plusHours(1) // 1시간 추가
                 : null;
 
-        // 애플리케이션 자체 Refresh Token 생성 (JwtTokenProvider를 통해 생성해야 하지만, 여기서는 우선 null로 처리하고 SecurityConfig에서 생성된 값을 받아와야 함)
-        // 이 부분은 SecurityConfig의 successHandler에서 생성된 refreshToken을 User 엔티티에 저장하는 로직으로 대체되어야 합니다.
-        // 따라서 OAuth2UserService에서는 직접 Refresh Token을 생성하지 않습니다.
+        // 애플리케이션 자체 Refresh Token 생성 (JwtTokenProvider를 통해 생성해야 하지만, 여기서는 우선 null로 처리하고 SecurityConfig에서 생성된 값을 받아와야 함
 
         Optional<User> userOptional = userRepository.findByOauthId(oauthId);
         User user;
@@ -59,9 +57,7 @@ public class OAuth2UserService extends DefaultOAuth2UserService {
             // Google 토큰 정보 업데이트
             user.setGoogleAccessToken(accessToken);
             user.setGoogleTokenExpiresAt(expiresAt);
-            // appRefreshToken 및 appRefreshTokenExpiresAt는 SecurityConfig의 successHandler에서 처리 후 저장됩니다.
-            // 여기서는 User 엔티티가 이미 존재할 경우 해당 필드를 업데이트하지 않도록 합니다.
-            // 새로운 사용자일 경우에만 SecurityConfig에서 생성된 토큰으로 설정됩니다.
+            // appRefreshToken 및 appRefreshTokenExpiresAt는 SecurityConfig의 successHandler에서 처리 후 저장
 
             userRepository.save(user);
         } else {
@@ -78,7 +74,7 @@ public class OAuth2UserService extends DefaultOAuth2UserService {
                     .googleAccessToken(accessToken)
                     .googleTokenExpiresAt(expiresAt)
                     // appRefreshToken 및 appRefreshTokenExpiresAt는 SecurityConfig의 successHandler에서 생성 후
-                    // User 객체에 설정되어 userRepository.save(user)를 통해 저장됩니다.
+                    // User 객체에 설정되어 userRepository.save(user)를 통해 저장
                     .build();
             userRepository.save(user);
         }

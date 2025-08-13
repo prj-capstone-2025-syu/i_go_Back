@@ -1,15 +1,52 @@
 # I-GO 프로젝트 실행 가이드
 
+## 🛠️ 사용된 기술 스택
+
+### 🖥️ 프론트엔드
+- **Next.js**: React 기반 풀스택 웹 프레임워크
+- **React Native**: 크로스 플랫폼 모바일 애플리케이션 개발
+- **Axios**: HTTP 클라이언트 라이브러리 (토큰 만료 자동 감지 및 갱신)
+
+### ⚙️ 백엔드
+- **Spring Boot 3.4.5**: REST API 서버
+- **Spring Security + OAuth2**: 인증/인가 및 구글 소셜 로그인
+- **Spring Data JPA**: 데이터베이스 ORM
+- **JWT**: 토큰 기반 인증 시스템
+- **Java 17**: 개발 언어
+
+### 📱 모바일
+- **Android Studio**: WebView 기반 하이브리드 앱
+
+### 🗄️ 데이터베이스 & 캐시
+- **MySQL (AWS RDS)**: 메인 데이터베이스
+- **Redis**: 세션 관리 및 캐싱
+- **Firebase**: 실시간 데이터베이스 및 푸시 알림
+
+### 🌐 외부 API 연동
+- **TMAP API**: 대중교통 경로 및 지도 서비스
+- **Google Calendar API**: 일정 관리
+- **OpenWeatherMap API**: 날씨 정보
+- **ExaOne AI API**: 인공지능 서비스
+
+### ☁️ 인프라 & 배포
+- **AWS EC2**: 서버 호스팅
+- **Docker**: 컨테이너화
+- **GitHub Actions**: CI/CD 자동화
+- **Nginx + Let's Encrypt**: 리버스 프록시 및 SSL
+- **블루-그린 배포**: 무중단 배포 시스템
+
+---
+
+## 🚀 배포 방식
+
+해당 프로젝트는 **main 브랜치**에 푸시가 이루어지면 **GitHub Actions**와 **Docker**를 활용한 **블루-그린 배포**를 통해 **무중단 배포**가 자동으로 실행됩니다.
+
+---
+
 ## 시스템 요구사항
 
 * **JDK**: 17 이상
 * **Gradle**: 7.x 이상
-
----
-
-## 배포 방식
-
-해당 프로젝트 저장소는 master 브랜치에 코드가 푸시되면 **GitHub Actions**와 **Docker**를 이용하여 **블루-그린 배포**를 통해 **무중단 배포**가 자동으로 이루어집니다.
 
 ---
 
