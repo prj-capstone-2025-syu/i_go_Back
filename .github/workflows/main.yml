@@ -67,19 +67,33 @@ jobs:
             cd /home/ubuntu/igo
             sudo docker load -i backend-image.tar
             
-            # 현재 활성화된 포트 확인 (타겟 파일 읽기)
-            # 파일이 없거나 Blue 포트(8080)일 경우 Blue로 간주
-            if ! grep -q "8081" ${{ env.NGINX_TARGET_FILE }}; then
+            # 현재 실행 중인 컨테이너 확인
+            if sudo docker ps | grep -q ${{ env.CONTAINER_BLUE }}; then
               ACTIVE_CONTAINER=${{ env.CONTAINER_BLUE }}
               NEW_CONTAINER=${{ env.CONTAINER_GREEN }}
               NEW_PORT=8081
-            else
+              echo "Blue is currently active, deploying Green on port 8081"
+            elif sudo docker ps | grep -q ${{ env.CONTAINER_GREEN }}; then
               ACTIVE_CONTAINER=${{ env.CONTAINER_GREEN }}
               NEW_CONTAINER=${{ env.CONTAINER_BLUE }}
               NEW_PORT=8080
+              echo "Green is currently active, deploying Blue on port 8080"
+            else
+              # 처음 배포인 경우
+              ACTIVE_CONTAINER=""
+              NEW_CONTAINER=${{ env.CONTAINER_BLUE }}
+              NEW_PORT=8080
+              echo "No active container found, deploying Blue on port 8080"
             fi
 
             echo "Active: $ACTIVE_CONTAINER, Deploying: $NEW_CONTAINER to port $NEW_PORT"
+            
+            # 새로 배포할 컨테이너가 이미 존재하면 정리 (동일 이름 컨테이너 방지)
+            if sudo docker ps -a | grep -q "^.*$NEW_CONTAINER\s"; then
+              echo "Cleaning up existing $NEW_CONTAINER container..."
+              sudo docker stop $NEW_CONTAINER || true
+              sudo docker rm $NEW_CONTAINER || true
+            fi
             
             # 새 컨테이너 시작
             sudo docker run -d \
@@ -95,15 +109,16 @@ jobs:
             if curl -f http://localhost:$NEW_PORT/actuator/health; then
               echo "Health check passed. Switching traffic..."
               
-              # Nginx 타겟 파일 덮어쓰기
+              # Nginx 타겟 파일 업데이트
               echo "server 127.0.0.1:$NEW_PORT;" | sudo tee ${{ env.NGINX_TARGET_FILE }}
               
               # Nginx 설정 리로드
               sudo nginx -t && sudo systemctl reload nginx
               
-              # 기존 컨테이너 정리
-              sleep 5
-              if sudo docker ps | grep -q $ACTIVE_CONTAINER; then
+              # 기존 활성 컨테이너가 있으면 정리 (트래픽 전환 후)
+              if [ ! -z "$ACTIVE_CONTAINER" ] && sudo docker ps | grep -q "^.*$ACTIVE_CONTAINER\s"; then
+                echo "Stopping old container: $ACTIVE_CONTAINER"
+                sleep 5
                 sudo docker stop $ACTIVE_CONTAINER || true
                 sudo docker rm $ACTIVE_CONTAINER || true
               fi
