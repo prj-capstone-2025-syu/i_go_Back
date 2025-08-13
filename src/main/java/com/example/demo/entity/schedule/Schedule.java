@@ -1,6 +1,7 @@
 package com.example.demo.entity.schedule;
 
 import com.example.demo.entity.user.User;
+import com.fasterxml.jackson.annotation.JsonFormat;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
@@ -23,8 +24,10 @@ public class Schedule {
 
     private String title;
 
+    @JsonFormat(pattern = "yyyy-MM-dd'T'HH:mm:ss", timezone = "Asia/Seoul")
     private LocalDateTime startTime;
 
+    @JsonFormat(pattern = "yyyy-MM-dd'T'HH:mm:ss", timezone = "Asia/Seoul")
     private LocalDateTime endTime;
 
     // 출발지 정보 추가
