@@ -30,7 +30,6 @@ public class OAuth2UserService extends DefaultOAuth2UserService {
         OAuth2User oAuth2User = super.loadUser(userRequest);
         Map<String, Object> originalAttributes = oAuth2User.getAttributes();
 
-        String oauthProviderId = userRequest.getClientRegistration().getRegistrationId(); // "google"
         String oauthId = String.valueOf(originalAttributes.get("sub")); // Google의 경우 'sub'가 고유 ID
         String email = (String) originalAttributes.get("email");
         String name = (String) originalAttributes.get("name");

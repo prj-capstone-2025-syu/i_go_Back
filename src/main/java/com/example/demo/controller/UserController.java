@@ -137,7 +137,6 @@ public class UserController {
             userService.saveUserFcmToken(appUser.getId(), fcmTokenRequest.getFcmToken());
             return ResponseEntity.ok(Map.of("message", "FCM 토큰이 성공적으로 저장되었습니다."));
         } catch (Exception e) {
-            // 실제 운영 환경에서는 로깅을 추가하는 것이 좋습니다.
             return ResponseEntity.internalServerError().body(Map.of("message", "FCM 토큰 저장 중 오류 발생: " + e.getMessage()));
         }
     }

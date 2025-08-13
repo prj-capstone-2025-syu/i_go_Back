@@ -34,7 +34,7 @@ public class ChatService {
     @Value("${exaone.api.url}")
     private String exaoneApiUrl;
 
-    // 사용자별 session_id 저장 (실제 서비스에서는 Redis/DB 권장)
+    // 사용자별 session_id 저장 (Redis로 수정 예정)
     private final Map<Long, String> sessionMap = new ConcurrentHashMap<>();
 
     public ChatResponse processMessage(ChatRequest request) {
