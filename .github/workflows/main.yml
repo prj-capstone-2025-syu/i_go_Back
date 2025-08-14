@@ -122,7 +122,7 @@ jobs:
               echo "server 127.0.0.1:$NEW_PORT;" | sudo tee ${{ env.NGINX_TARGET_FILE }}
               sudo nginx -t && sudo systemctl reload nginx
               
-              if [ ! -z "$ACTIVE_CONTAINER" ] && sudo docker ps | grep -q "^.*$ACTIVE_CONTAINER\s"; then
+              if [ ! -z "$ACTIVE_CONTAINER" ] && sudo docker ps | grep -q "$ACTIVE_CONTAINER\s"; then
                 echo "Stopping old container: $ACTIVE_CONTAINER"
                 sleep 5
                 sudo docker stop $ACTIVE_CONTAINER || true
