@@ -1,26 +1,20 @@
 package com.example.demo.service;
 
-import com.example.demo.dto.routine.CalculatedRoutineItemTime;
 import com.example.demo.entity.routine.Routine;
-import com.example.demo.entity.routine.RoutineItem;
 import com.example.demo.entity.schedule.Schedule;
 import com.example.demo.entity.schedule.Category;
 import com.example.demo.entity.user.User;
 import com.example.demo.repository.RoutineRepository;
 import com.example.demo.repository.ScheduleRepository;
 import com.example.demo.repository.UserRepository;
-import com.example.demo.repository.NotificationRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.data.domain.PageRequest;
 
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
-import java.util.Comparator;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -37,15 +31,6 @@ public class ScheduleService {
     private final RoutineRepository routineRepository;
     private final GoogleCalendarService googleCalendarService;
     private final UserRepository userRepository;
-    private final NotificationRepository notificationRepository;
-    private final FCMService fcmService;
-    private final RoutineService routineService;
-
-    private static final String NOTIFICATION_TYPE_SCHEDULE_START = "SCHEDULE_START";
-    private static final String NOTIFICATION_TYPE_ROUTINE_ITEM_START = "ROUTINE_ITEM_START";
-    private static final String NOTIFICATION_TYPE_SUPPLIES_REMINDER = "SUPPLIES_REMINDER";
-    private static final int SUPPLIES_NOTIFICATION_MINUTES_BEFORE = 5; // 준비물 알림: 일정 시작 X분 전
-
 
     // 루틴 기반 일정 생성 (종료 시간을 직접 받음)
     public Schedule createFromRoutine(Long userId, Long routineId, String title, LocalDateTime startTime,
@@ -254,176 +239,7 @@ public class ScheduleService {
         return schedules.isEmpty() ? Optional.empty() : Optional.of(schedules.get(0));
     }
 
-    @Scheduled(cron = "0 * * * * ?") // 매 분 0초에 실행
-    public void sendScheduleAndRoutineNotifications() {
-        LocalDateTime now = LocalDateTime.now().withSecond(0).withNano(0); // 현재 시간 (초, 나노초 제거)
-        log.info("스케줄 및 루틴 알림 작업 실행: 현재 시간 {}", now);
-
-        // 1. 스케줄 시작 알림 및 준비물 알림 처리 (PENDING 상태인 스케줄 대상)
-        //    알림 범위: 현재 시간 ~ 5분 후 시작하는 일정 (스케줄 시작 알림)
-        //    준비물 알림: 설정된 시간(예: 30분) 전에 발송
-        LocalDateTime scheduleNotificationRangeStart = now;
-        LocalDateTime scheduleNotificationRangeEnd = now.plusMinutes(5); // 다음 5분 이내 시작될 일정
-
-        List<Schedule> pendingSchedules = scheduleRepository.findByStartTimeBetweenAndStatusAndUserFcmTokenIsNotNull(
-                scheduleNotificationRangeStart, // 지금부터
-                scheduleNotificationRangeEnd.plusMinutes(SUPPLIES_NOTIFICATION_MINUTES_BEFORE), // 준비물 알림 고려하여 더 넓은 범위 조회
-                Schedule.ScheduleStatus.PENDING
-        );
-
-        for (Schedule schedule : pendingSchedules) {
-            User user = schedule.getUser();
-            if (user == null || user.getFcmToken() == null || user.getFcmToken().isEmpty() || !user.isNotificationsEnabled()) {
-                continue; // 기본 조건 미충족 시 건너뛰기
-            }
-
-            // 1-1. 준비물 알림 (설정된 시간 전)
-            // schedule.getStartTime()이 (now + SUPPLIES_NOTIFICATION_MINUTES_BEFORE) 와 일치하는지 확인
-            LocalDateTime suppliesNotificationTime = schedule.getStartTime().minusMinutes(SUPPLIES_NOTIFICATION_MINUTES_BEFORE);
-            if (user.isNotifySupplies() && schedule.getSupplies() != null && !schedule.getSupplies().isEmpty() &&
-                    suppliesNotificationTime.isEqual(now)) {
-
-                Optional<com.example.demo.entity.fcm.Notification> existingSuppliesNotification = notificationRepository
-                        .findByUserAndRelatedIdAndNotificationType(user, schedule.getId(), NOTIFICATION_TYPE_SUPPLIES_REMINDER);
-
-                if (existingSuppliesNotification.isEmpty()) {
-                    String title = "🎒 준비물 체크";
-                    String body = String.format("'%s'이(가) %d분 후 시작돼요!\n📋 준비물: %s",
-                        schedule.getTitle(), SUPPLIES_NOTIFICATION_MINUTES_BEFORE, schedule.getSupplies());
-                    Map<String, String> data = new HashMap<>();
-                    data.put("scheduleId", schedule.getId().toString());
-                    data.put("type", NOTIFICATION_TYPE_SUPPLIES_REMINDER);
-                    sendAndSaveNotification(user, title, body, data, schedule.getId(), NOTIFICATION_TYPE_SUPPLIES_REMINDER);
-                }
-            }
-
-            // 1-2. 스케줄 시작 알림 (일정 시작 시간 정각)
-            // schedule.getStartTime()이 now 와 일치하는지 확인
-            if (user.isNotifyNextSchedule() && schedule.getStartTime().isEqual(now)) {
-                Optional<com.example.demo.entity.fcm.Notification> existingScheduleStartNotification = notificationRepository
-                        .findByUserAndRelatedIdAndNotificationType(user, schedule.getId(), NOTIFICATION_TYPE_SCHEDULE_START);
-
-                if (existingScheduleStartNotification.isEmpty()) {
-                    String title = "🚀 일정 시작";
-                    StringBuilder bodyBuilder = new StringBuilder();
-                    bodyBuilder.append(String.format("'%s'이(가) 지금 시작돼요!", schedule.getTitle()));
-
-                    // 도착지 정보 추가
-                    if (schedule.getLocation() != null && !schedule.getLocation().trim().isEmpty()) {
-                        bodyBuilder.append(String.format("\n📍 도착지: %s", schedule.getLocation()));
-                    }
-
-                    // 시작 위치 정보도 있다면 추가
-                    if (schedule.getStartLocation() != null && !schedule.getStartLocation().trim().isEmpty()) {
-                        bodyBuilder.append(String.format("\n🏠 출발지: %s", schedule.getStartLocation()));
-                    }
-
-                    String body = bodyBuilder.toString();
-                    Map<String, String> data = new HashMap<>();
-                    data.put("scheduleId", schedule.getId().toString());
-                    data.put("type", NOTIFICATION_TYPE_SCHEDULE_START);
-
-                    sendAndSaveNotification(user, title, body, data, schedule.getId(), NOTIFICATION_TYPE_SCHEDULE_START);
-                    schedule.setStatus(Schedule.ScheduleStatus.IN_PROGRESS);
-                    scheduleRepository.save(schedule);
-                    log.info("스케줄 ID {} 상태를 IN_PROGRESS로 변경 (시작 알림 발송)", schedule.getId());
-                } else {
-                    // 이미 알림이 갔지만 PENDING 상태라면 IN_PROGRESS로 변경
-                    if (schedule.getStatus() == Schedule.ScheduleStatus.PENDING) {
-                        schedule.setStatus(Schedule.ScheduleStatus.IN_PROGRESS);
-                        scheduleRepository.save(schedule);
-                        log.info("스케줄 ID {} 상태를 IN_PROGRESS로 변경 (기존 시작 알림 발견)", schedule.getId());
-                    }
-                }
-            }
-        }
-
-        // 2. 루틴 아이템 시작 알림 처리 (IN_PROGRESS 상태인 스케줄 대상)
-        List<Schedule> inProgressSchedules = scheduleRepository.findByStatusAndUserFcmTokenIsNotNull(Schedule.ScheduleStatus.IN_PROGRESS);
-
-        for (Schedule schedule : inProgressSchedules) {
-            User user = schedule.getUser();
-            if (user == null || user.getFcmToken() == null || user.getFcmToken().isEmpty() ||
-                    !user.isNotificationsEnabled() || !user.isNotifyRoutineProgress() || schedule.getRoutineId() == null) {
-                // 루틴 진행 알림 조건 미충족 또는 루틴 없는 경우, 또는 루틴 아이템 알림 설정 꺼진 경우
-                // 루틴 없는 스케줄의 완료 처리
-                if (schedule.getRoutineId() == null && schedule.getEndTime() != null && (schedule.getEndTime().isBefore(now) || schedule.getEndTime().isEqual(now))) {
-                    schedule.setStatus(Schedule.ScheduleStatus.COMPLETED);
-                    scheduleRepository.save(schedule);
-                    log.info("루틴 없는 스케줄 ID {} 종료시간 도달, COMPLETED로 변경", schedule.getId());
-                }
-                continue;
-            }
-
-            List<CalculatedRoutineItemTime> calculatedItems = routineService.calculateRoutineItemTimes(schedule.getRoutineId(), schedule.getStartTime());
-            boolean allItemsCompletedForThisSchedule = true;
-
-            for (CalculatedRoutineItemTime itemTime : calculatedItems) {
-                // 루틴 아이템 시작 시간이 현재 시간(now)과 정확히 일치하는 경우
-                if (itemTime.getStartTime().isEqual(now)) {
-                    Optional<com.example.demo.entity.fcm.Notification> existingRoutineItemNotification = notificationRepository
-                            .findByUserAndRelatedIdAndNotificationType(user, itemTime.getRoutineItemId(), NOTIFICATION_TYPE_ROUTINE_ITEM_START);
-
-                    if (existingRoutineItemNotification.isEmpty()) {
-                        String title = String.format("📋 %s", schedule.getTitle());
-                        String body = String.format("🎯 %s 할 시간이에요!", itemTime.getRoutineItemName());
-                        Map<String, String> data = new HashMap<>();
-                        data.put("scheduleId", schedule.getId().toString());
-                        data.put("routineId", itemTime.getRoutineId().toString());
-                        data.put("routineItemId", itemTime.getRoutineItemId().toString());
-                        data.put("type", NOTIFICATION_TYPE_ROUTINE_ITEM_START);
-                        sendAndSaveNotification(user, title, body, data, itemTime.getRoutineItemId(), NOTIFICATION_TYPE_ROUTINE_ITEM_START);
-                    } else {
-                        log.info("루틴 아이템 ID {} 시작 알림이 이미 전송되었습니다. 건너뜁니다.", itemTime.getRoutineItemId());
-                    }
-                }
-
-                if (itemTime.getEndTime().isAfter(now)) {
-                    allItemsCompletedForThisSchedule = false;
-                }
-            }
-
-            if (allItemsCompletedForThisSchedule && !calculatedItems.isEmpty()) {
-                CalculatedRoutineItemTime lastItem = calculatedItems.get(calculatedItems.size() - 1);
-                if (lastItem.getEndTime().isBefore(now) || lastItem.getEndTime().isEqual(now)) {
-                    schedule.setStatus(Schedule.ScheduleStatus.COMPLETED);
-                    scheduleRepository.save(schedule);
-                    log.info("스케줄 ID {}의 모든 루틴 아이템 완료, COMPLETED로 변경", schedule.getId());
-                }
-            } else if (calculatedItems.isEmpty() && schedule.getEndTime() != null && (schedule.getEndTime().isBefore(now) || schedule.getEndTime().isEqual(now))) {
-                schedule.setStatus(Schedule.ScheduleStatus.COMPLETED);
-                scheduleRepository.save(schedule);
-                log.info("루틴 아이템 없는 스케줄 ID {} 종료시간 도달, COMPLETED로 변경", schedule.getId());
-            }
-        }
-    }
-
-    private void sendAndSaveNotification(User user, String title, String body, Map<String, String> data, Long relatedId, String notificationType) {
-        try {
-            // FCM 토큰 유효성 재확인 (sendScheduleAndRoutineNotifications 에서 이미 확인했지만, 안전을 위해)
-            if (user.getFcmToken() == null || user.getFcmToken().isEmpty()) {
-                    log.warn("{} 알림 전송 시도: 사용자 ID {}의 FCM 토큰이 없습니다.", notificationType, user.getId());
-                return;
-            }
-
-            fcmService.sendMessageToToken(user.getFcmToken(), title, body, data);
-            log.info("{} 알림 전송 성공: 사용자 ID {}, 관련 ID {}", notificationType, user.getId(), relatedId);
-
-            com.example.demo.entity.fcm.Notification notification = com.example.demo.entity.fcm.Notification.builder()
-                    .user(user)
-                    .title(title)
-                    .body(body)
-                    .relatedId(relatedId)
-                    .notificationType(notificationType)
-                    .build();
-            notificationRepository.save(notification);
-            log.info("{} 알림 DB 저장 완료: 알림 ID {}", notificationType, notification.getId());
-
-        } catch (Exception e) {
-            log.error("{} 알림 전송/저장 실패: 사용자 ID {}, 관련 ID {}. 오류: {}", notificationType, user.getId(), relatedId, e.getMessage(), e);
-        }
-    }
-
+    //Function_Call
     public List<Schedule> findSchedulesByArgs(Long userId, Map<String, Object> args) {
         String title = (String) args.get("title");
         String datetime = (String) args.get("datetime");
@@ -456,6 +272,7 @@ public class ScheduleService {
         return getSchedulesByDateRange(userId, startTime, endTime);
     }
 
+    //Function_Call
     public Schedule createScheduleByArgs(Long userId, Map<String, Object> args) {
         log.info("ScheduleService.createScheduleByArgs received args: {}", args); // Log the received arguments map
         String title = (String) args.get("title");
@@ -515,6 +332,7 @@ public class ScheduleService {
         return createSchedule(userId, title, startTime, endTime, location, memo, category, supplies); // supplies 전달
     }
 
+    //Function_Call
     public boolean deleteScheduleByArgs(Long userId, Map<String, Object> args) {
         String title = (String) args.get("title");
         String datetime = (String) args.get("datetime");
@@ -552,6 +370,7 @@ public class ScheduleService {
         return false;
     }
 
+    //Function_Call
     public Schedule updateScheduleByArgs(Long userId, Map<String, Object> args) {
         String title = (String) args.get("title");
         String datetime = (String) args.get("datetime");
@@ -589,4 +408,3 @@ public class ScheduleService {
         );
     }
 }
-
