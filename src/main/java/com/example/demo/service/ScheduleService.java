@@ -407,4 +407,15 @@ public class ScheduleService {
             category
         );
     }
+
+    /**
+     * 날씨 업데이트 대상 활성 스케줄 조회 (진행 중이거나 24시간 이내 시작 예정)
+     */
+    @Transactional(readOnly = true)
+    public List<Schedule> getActiveSchedulesForWeatherUpdate(LocalDateTime now) {
+        LocalDateTime startRange = now.minusHours(1); // 1시간 전부터 (진행 중인 것 포함)
+        LocalDateTime endRange = now.plusHours(24); // 24시간 후까지
+        
+        return scheduleRepository.findActiveSchedulesForWeatherUpdate(startRange, endRange, now);
+    }
 }

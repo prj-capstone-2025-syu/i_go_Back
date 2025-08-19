@@ -32,9 +32,22 @@ public interface ScheduleRepository extends JpaRepository<Schedule, Long> {
     @Query("SELECT s FROM Schedule s WHERE s.user.id = :userId AND s.startTime <= :now AND s.endTime > :now ORDER BY s.startTime DESC")
     List<Schedule> findLatestInProgressSchedulesByUserId(@Param("userId") Long userId, @Param("now") LocalDateTime now, Pageable pageable);
 
+    /**
+     * 날씨 업데이트 대상 활성 스케줄 조회
+     * 조건: 진행 중이거나 24시간 이내 시작 예정, 좌표 정보가 있는 스케줄
+     */
+    @Query("SELECT s FROM Schedule s WHERE " +
+           "(s.startTime BETWEEN :startRange AND :endRange OR " +
+           "(s.startTime <= :now AND s.endTime > :now)) AND " +
+           "s.destinationX IS NOT NULL AND s.destinationY IS NOT NULL")
+    List<Schedule> findActiveSchedulesForWeatherUpdate(
+            @Param("startRange") LocalDateTime startRange,
+            @Param("endRange") LocalDateTime endRange,
+            @Param("now") LocalDateTime now
+    );
+
     // 사용자 ID로 모든 일정 삭제
     @Modifying
     @Query("DELETE FROM Schedule s WHERE s.user.id = :userId")
     void deleteAllByUserId(@Param("userId") Long userId);
 }
-
