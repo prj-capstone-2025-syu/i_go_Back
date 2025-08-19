@@ -18,7 +18,7 @@
 - **Android Studio**: WebView 기반 하이브리드 앱
 
 ### 🗄️ 데이터베이스 & 캐시
-- **MySQL (AWS RDS)**: 메인 데이터베이스
+- **MySQL (Docker)**: 메인 데이터베이스
 - **Redis**: 세션 관리 및 캐싱
 - **Firebase**: 실시간 데이터베이스 및 푸시 알림
 
