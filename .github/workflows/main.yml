@@ -67,6 +67,12 @@ jobs:
             cd /home/ubuntu/igo
             sudo docker load -i backend-image.tar
             
+            # Docker Compose 네트워크가 없으면 생성
+            if ! sudo docker network ls | grep -q igo_default; then
+              sudo docker network create igo_default
+              echo "Created igo_default network"
+            fi
+            
             # Blue와 Green 컨테이너의 고정 포트 설정
             BLUE_PORT=8080
             GREEN_PORT=8081
