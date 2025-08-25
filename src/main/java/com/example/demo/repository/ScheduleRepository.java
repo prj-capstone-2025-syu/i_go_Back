@@ -46,6 +46,13 @@ public interface ScheduleRepository extends JpaRepository<Schedule, Long> {
             @Param("now") LocalDateTime now
     );
 
+    // 특정 시간에 시작하고 루틴이 있는 PENDING 상태의 스케줄 조회 (루틴 시작 1시간 전 알림용)
+    @Query("SELECT s FROM Schedule s WHERE s.startTime = :startTime AND s.status = :status AND s.routineId IS NOT NULL AND s.user.fcmToken IS NOT NULL AND s.user.fcmToken <> ''")
+    List<Schedule> findByStartTimeAndStatusAndRoutineIdNotNull(
+            @Param("startTime") LocalDateTime startTime,
+            @Param("status") Schedule.ScheduleStatus status
+    );
+
     // 사용자 ID로 모든 일정 삭제
     @Modifying
     @Query("DELETE FROM Schedule s WHERE s.user.id = :userId")

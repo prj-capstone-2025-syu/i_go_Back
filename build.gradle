@@ -68,6 +68,7 @@ dependencies {
 
     // 데이터베이스
     runtimeOnly 'com.mysql:mysql-connector-j'
+    testImplementation 'com.h2database:h2' // H2 데이터베이스 테스트용 추가
 
     // 테스트
     testImplementation 'org.springframework.boot:spring-boot-starter-test'

@@ -26,11 +26,12 @@ import java.util.stream.Collectors;
 @Transactional
 public class ScheduleService {
 
-
     private final ScheduleRepository scheduleRepository;
     private final RoutineRepository routineRepository;
     private final GoogleCalendarService googleCalendarService;
     private final UserRepository userRepository;
+    private final RoutineService routineService;
+    private final ScheduleNotificationService scheduleNotificationService;
 
     // 루틴 기반 일정 생성 (종료 시간을 직접 받음)
     public Schedule createFromRoutine(Long userId, Long routineId, String title, LocalDateTime startTime,
@@ -81,7 +82,19 @@ public class ScheduleService {
             schedule.setGoogleCalendarEventId(null);
         }
 
-        return scheduleRepository.save(schedule);
+        Schedule savedSchedule = scheduleRepository.save(schedule);
+
+        // 지연 등록 알림 처리
+        LocalDateTime now = LocalDateTime.now();
+        if (startTime.isBefore(now)) {
+            String currentRoutineItemName = routineService.getCurrentRoutineItemName(routineId, startTime, now);
+            if (currentRoutineItemName != null) {
+                scheduleNotificationService.sendDelayedRoutineItemNotification(savedSchedule, user, currentRoutineItemName);
+                log.info("지연 등록 알림 처리 완료 - Schedule ID: {}, Current Item: {}", savedSchedule.getId(), currentRoutineItemName);
+            }
+        }
+
+        return savedSchedule;
     }
 
     // 날짜별 일정 조회
@@ -102,6 +115,9 @@ public class ScheduleService {
         if (!schedule.getUser().getId().equals(userId)) {
             throw new IllegalArgumentException("해당 일정에 대한 수정 권한이 없습니다.");
         }
+
+        // 기존 루틴 ID 저장
+        Long previousRoutineId = schedule.getRoutineId();
 
         if (routineId != null) {
             Routine routine = routineRepository.findById(routineId)
@@ -142,7 +158,19 @@ public class ScheduleService {
                     userId, scheduleId, e.getMessage(), e);
         }
 
-        return scheduleRepository.save(schedule);
+        Schedule savedSchedule = scheduleRepository.save(schedule);
+
+        // 지연 등록 알림 처리 (루틴이 새로 추가되었거나 변경된 경우)
+        LocalDateTime now = LocalDateTime.now();
+        if (routineId != null && !routineId.equals(previousRoutineId) && startTime.isBefore(now)) {
+            String currentRoutineItemName = routineService.getCurrentRoutineItemName(routineId, startTime, now);
+            if (currentRoutineItemName != null) {
+                scheduleNotificationService.sendDelayedRoutineItemNotification(savedSchedule, schedule.getUser(), currentRoutineItemName);
+                log.info("일정 수정 시 지연 등록 알림 처리 완료 - Schedule ID: {}, Current Item: {}", savedSchedule.getId(), currentRoutineItemName);
+            }
+        }
+
+        return savedSchedule;
     }
 
     // 특정 일정 조회
@@ -415,7 +443,7 @@ public class ScheduleService {
     public List<Schedule> getActiveSchedulesForWeatherUpdate(LocalDateTime now) {
         LocalDateTime startRange = now.minusHours(1); // 1시간 전부터 (진행 중인 것 포함)
         LocalDateTime endRange = now.plusHours(24); // 24시간 후까지
-        
+
         return scheduleRepository.findActiveSchedulesForWeatherUpdate(startRange, endRange, now);
     }
 }

@@ -279,11 +279,43 @@ public class ScheduleWeatherService {
 
     /**
      * 예보 날씨 정보 조회 (2~5일 후)
+     *
+     * TODO: 추후 개선 사항 - 3시간 간격 예보 리스트 제공 기능
+     * 현재는 스케줄 시간과 가장 가까운 단일 예보만 제공하지만,
+     * 스케줄 며칠 전부터는 하루 종일의 3시간 간격 예보를 제공하는 것도 유용할 수 있음
+     *
+     * 예시 구현 아이디어:
+     * - 3일 이상 전: 해당 날짜의 전체 3시간 간격 예보 리스트 (8개: 00시, 03시, 06시, ..., 21시)
+     * - 2일 전: 스케줄 시간 기준 ±6시간 예보 리스트 (3~5개)
+     * - 1일 전: 스케줄 시간과 가장 가까운 예보 1개
+     * - 진행 중: 실시간 현재 날씨
+     *
+     * 장점: 사용자가 하루 종일의 날씨 변화를 미리 파악 가능
+     * 단점: 데이터량 증가, UI 복잡성 증가
      */
     private Mono<Optional<ScheduleWeatherResponse>> fetchForecastWeather(Schedule schedule, ScheduleWeatherResponse response) {
         return weatherApiService.getForecast(schedule.getDestinationY(), schedule.getDestinationX())
                 .map(forecastResponse -> {
+                    // 현재: 스케줄 시간과 가장 가까운 단일 예보만 선택
                     var closestForecast = findClosestForecast(forecastResponse, schedule.getStartTime());
+
+                    /* TODO: 3시간 간격 예보 리스트 기능 구현 시 아래 주석 해제 및 수정
+                    long daysUntilSchedule = ChronoUnit.DAYS.between(LocalDateTime.now(), schedule.getStartTime());
+
+                    if (daysUntilSchedule >= 3) {
+                        // 3일 이상 전: 해당 날짜의 전체 예보 리스트
+                        var dailyForecasts = getDailyForecastList(forecastResponse, schedule.getStartTime());
+                        response.setWeatherList(dailyForecasts); // 새로운 필드 필요
+                    } else if (daysUntilSchedule >= 2) {
+                        // 2일 전: 스케줄 시간 기준 ±6시간 예보
+                        var nearbyForecasts = getNearbyForecastList(forecastResponse, schedule.getStartTime(), 6);
+                        response.setWeatherList(nearbyForecasts);
+                    } else {
+                        // 1일 전: 기존 로직 (단일 예보)
+                        response.setWeather(weatherInfo);
+                    }
+                    */
+
                     if (closestForecast.isPresent()) {
                         ScheduleWeatherResponse.WeatherInfo weatherInfo = createWeatherInfoFromForecast(closestForecast.get());
                         response.setWeather(weatherInfo);

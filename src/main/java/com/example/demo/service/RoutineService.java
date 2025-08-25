@@ -255,4 +255,26 @@ public class RoutineService {
         }
         return calculatedTimes;
     }
+
+    // 현재 시간에 해당하는 루틴 아이템을 찾는 메서드
+    @Transactional(readOnly = true)
+    public String getCurrentRoutineItemName(Long routineId, LocalDateTime scheduleStartTime, LocalDateTime currentTime) {
+        List<CalculatedRoutineItemTime> calculatedTimes = calculateRoutineItemTimes(routineId, scheduleStartTime);
+
+        for (CalculatedRoutineItemTime itemTime : calculatedTimes) {
+            if (!currentTime.isBefore(itemTime.getStartTime()) && currentTime.isBefore(itemTime.getEndTime())) {
+                return itemTime.getItemName();
+            }
+        }
+
+        // 현재 시간이 모든 루틴 아이템 시간을 지났다면, 마지막 아이템 반환
+        if (!calculatedTimes.isEmpty()) {
+            CalculatedRoutineItemTime lastItem = calculatedTimes.get(calculatedTimes.size() - 1);
+            if (!currentTime.isBefore(lastItem.getEndTime())) {
+                return lastItem.getItemName();
+            }
+        }
+
+        return null; // 해당하는 아이템이 없는 경우
+    }
 }
