@@ -28,7 +28,7 @@ public class RoutineService {
     public List<RoutineResponseDTO> getAllRoutinesByUserId(Long userId) {
         User user = getUserById(userId);
         // 기존 코드: List<Routine> routines = routineRepository.findAllByUserId(user);
-        List<Routine> routines = routineRepository.findAllByUser(user); // 수정된 코드
+        List<Routine> routines = routineRepository.findAllByUser(user);
         return routines.stream()
                 .map(this::convertToRoutineResponseDTO)
                 .collect(Collectors.toList());
@@ -239,7 +239,7 @@ public class RoutineService {
         // RoutineItem을 orderIndex 순으로 정렬
         List<RoutineItem> sortedItems = routine.getItems().stream()
                 .sorted(Comparator.comparingInt(RoutineItem::getOrderIndex))
-                .collect(Collectors.toList());
+                .toList();
 
         for (RoutineItem item : sortedItems) {
             LocalDateTime itemEndTime = currentItemStartTime.plusMinutes(item.getDurationMinutes());
@@ -254,5 +254,27 @@ public class RoutineService {
             currentItemStartTime = itemEndTime; // 다음 아이템의 시작 시간은 현재 아이템의 종료 시간
         }
         return calculatedTimes;
+    }
+
+    // 현재 시간에 해당하는 루틴 아이템을 찾는 메서드
+    @Transactional(readOnly = true)
+    public String getCurrentRoutineItemName(Long routineId, LocalDateTime scheduleStartTime, LocalDateTime currentTime) {
+        List<CalculatedRoutineItemTime> calculatedTimes = calculateRoutineItemTimes(routineId, scheduleStartTime);
+
+        for (CalculatedRoutineItemTime itemTime : calculatedTimes) {
+            if (!currentTime.isBefore(itemTime.getStartTime()) && currentTime.isBefore(itemTime.getEndTime())) {
+                return itemTime.getRoutineItemName();
+            }
+        }
+
+        // 현재 시간이 모든 루틴 아이템 시간을 지났다면, 마지막 아이템 반환
+        if (!calculatedTimes.isEmpty()) {
+            CalculatedRoutineItemTime lastItem = calculatedTimes.get(calculatedTimes.size() - 1);
+            if (!currentTime.isBefore(lastItem.getEndTime())) {
+                return lastItem.getRoutineItemName();
+            }
+        }
+
+        return null; // 해당하는 아이템이 없는 경우
     }
 }

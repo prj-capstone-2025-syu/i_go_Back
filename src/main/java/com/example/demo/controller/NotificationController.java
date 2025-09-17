@@ -1,7 +1,7 @@
 package com.example.demo.controller;
 
 import com.example.demo.dto.notification.NotificationDto;
-import com.example.demo.entity.entityInterface.AppUser; // 추가
+import com.example.demo.entity.entityInterface.AppUser;
 import com.example.demo.entity.fcm.Notification;
 import com.example.demo.entity.user.User;
 import com.example.demo.repository.NotificationRepository;
@@ -9,7 +9,7 @@ import com.example.demo.repository.UserRepository;
 import com.example.demo.service.NotificationService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
-import org.springframework.security.core.annotation.AuthenticationPrincipal; // 추가
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 import com.example.demo.service.FCMService;
 import java.util.HashMap;
