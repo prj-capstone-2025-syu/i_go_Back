@@ -1,6 +1,7 @@
 package com.example.demo.service;
 
 import com.example.demo.dto.routine.CalculatedRoutineItemTime;
+import com.example.demo.dto.weather.WeatherResponse;
 import com.example.demo.entity.fcm.Notification;
 import com.example.demo.entity.schedule.Schedule;
 import com.example.demo.entity.user.User;
@@ -11,6 +12,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
+import reactor.core.publisher.Mono;
 
 import java.time.LocalDateTime;
 import java.util.HashMap;
@@ -67,14 +69,31 @@ public class ScheduleNotificationService {
     // 루틴 시작 1시간 전 알림 처리 (날씨 정보 포함)
     private void processRoutineStartReminders(LocalDateTime now) {
         LocalDateTime oneHourLater = now.plusHours(1);
+        // 1분 범위로 검색하여 정확한 시간 매칭 실패 방지
+        LocalDateTime searchEndTime = oneHourLater.plusMinutes(1);
 
-        // 1시간 후 시작되는 루틴이 포함된 PENDING 상태의 스케줄들 조회
+        log.info("🔍 [ScheduleNotificationService] 1시간 전 알림 처리 시작 - 현재시간: {}, 검색범위: {} ~ {}",
+                now, oneHourLater, searchEndTime);
+
+        // 1시간 후 시작되는 루틴이 포함된 PENDING 상태의 스케줄들 조회 (시간 범위 사용)
         List<Schedule> upcomingRoutineSchedules = scheduleRepository.findByStartTimeAndStatusAndRoutineIdNotNull(
-                oneHourLater, Schedule.ScheduleStatus.PENDING);
+                oneHourLater, searchEndTime, Schedule.ScheduleStatus.PENDING);
+
+        log.info("📋 [ScheduleNotificationService] 1시간 후 시작되는 루틴 스케줄 {}개 발견", upcomingRoutineSchedules.size());
+
+        // 디버깅용 로그 추가
+        for (Schedule schedule : upcomingRoutineSchedules) {
+            log.debug("🔎 [ScheduleNotificationService] 발견된 스케줄 - ID: {}, 제목: '{}', 시작시간: {}, 루틴ID: {}",
+                    schedule.getId(), schedule.getTitle(), schedule.getStartTime(), schedule.getRoutineId());
+        }
 
         for (Schedule schedule : upcomingRoutineSchedules) {
             User user = schedule.getUser();
             if (!isValidNotificationUser(user) || !user.isNotifyRoutineProgress()) {
+                log.debug("⚠️ [ScheduleNotificationService] 사용자 알림 조건 미충족 - User ID: {}, FCM Token: {}, NotifyRoutineProgress: {}",
+                        user.getId(),
+                        (user.getFcmToken() != null ? "있음" : "없음"),
+                        user.isNotifyRoutineProgress());
                 continue;
             }
 
@@ -83,9 +102,16 @@ public class ScheduleNotificationService {
                     .findByUserAndRelatedIdAndNotificationType(user, schedule.getId(), NOTIFICATION_TYPE_ROUTINE_START_REMINDER);
 
             if (existingNotification.isEmpty()) {
-                sendRoutineStartReminderWithWeather(schedule, user, now);
+                log.info("📤 [ScheduleNotificationService] 1시간 전 알림 전송 시작 - Schedule ID: {}, User ID: {}",
+                        schedule.getId(), user.getId());
+                sendRoutineStartReminderWithWeather(schedule, user);
+            } else {
+                log.debug("🔄 [ScheduleNotificationService] 이미 1시간 전 알림 전송됨 - Schedule ID: {}, Notification ID: {}",
+                        schedule.getId(), existingNotification.get().getId());
             }
         }
+
+        log.info("✅ [ScheduleNotificationService] 1시간 전 알림 처리 완료");
     }
 
     // PENDING 상태의 스케줄들에 대한 알림 처리 + 준비물 알림 (설정된 시간 전) + 스케줄 시작 알림 (정각)
@@ -342,7 +368,7 @@ public class ScheduleNotificationService {
                 return;
             }
 
-            String title = "일정 등록 완료";
+            String title = "늦은 일정 등록";
             String body = String.format("이미 시작 시간이 지났는데, '%s'을(를) 완료하셨나요?", routineItemName);
 
             Map<String, String> data = new HashMap<>();
@@ -350,7 +376,16 @@ public class ScheduleNotificationService {
             data.put("routineItemName", routineItemName);
             data.put("type", "delayed_routine_item");
 
+            Notification notification = Notification.builder()
+                    .user(user)
+                    .title(title)
+                    .body(body)
+                    .relatedId(schedule.getId())
+                    .notificationType("delayed_routine_item")
+                    .build();
+
             fcmService.sendMessageToToken(fcmToken, title, body, data);
+            notificationRepository.save(notification);
             log.info("지연 루틴 아이템 알림 전송 완료 - User ID: {}, Schedule ID: {}, Item: {}",
                     user.getId(), schedule.getId(), routineItemName);
 
@@ -361,12 +396,24 @@ public class ScheduleNotificationService {
     }
 
     /**
-     * 루틴 시작 1시간 전 알림 전송 (날씨 정보 포함)
+     * 비대면 일정 판별 (category가 REMOTE, ONLINE 등)
+     */
+    private boolean isRemoteSchedule(Schedule schedule) {
+        if (schedule.getCategory() == null) return false;
+        String category = schedule.getCategory().name().toLowerCase();
+        return category.contains("remote") ||
+               category.contains("online") ||
+               category.contains("비대면") ||
+               category.contains("화상") ||
+               category.contains("온라인");
+    }
+
+    /**
+     * 루틴 시작 1시간 전 알림 전송 (출발지와 도착지 날씨 정보 포함)
      * @param schedule 일정 정보
      * @param user 사용자 정보
-     * @param now 현재 시간
      */
-    private void sendRoutineStartReminderWithWeather(Schedule schedule, User user, LocalDateTime now) {
+    private void sendRoutineStartReminderWithWeather(Schedule schedule, User user) {
         try {
             String title = "루틴 시작 알림";
             StringBuilder bodyBuilder = new StringBuilder();
@@ -378,66 +425,130 @@ public class ScheduleNotificationService {
             data.put("type", NOTIFICATION_TYPE_ROUTINE_START_REMINDER);
             data.put("startTime", schedule.getStartTime().toString());
 
-            // 날씨 정보 조회 및 추가
-            if (schedule.getDestinationY() != null && schedule.getDestinationX() != null) {
-                try {
-                    weatherApiService.getCurrentWeather(schedule.getDestinationY(), schedule.getDestinationX())
-                        .subscribe(
-                            weatherResponse -> {
-                                // 날씨 정보를 알림 메시지에 추가
-                                String weatherInfo = String.format("\n🌤️ 날씨: %s, 온도: %.1f°C",
-                                    weatherResponse.getWeather().get(0).getDescription(),
-                                    weatherResponse.getMain().getTemp());
-                                bodyBuilder.append(weatherInfo);
+            // 비대면 일정이면 날씨 정보 없이 알림 전송
+            if (isRemoteSchedule(schedule)) {
+                log.info("🏠 [ScheduleNotificationService] 비대면 일정 감지 - Schedule ID: {}, Category: {}",
+                        schedule.getId(), schedule.getCategory());
 
-                                // FCM 데이터에 날씨 정보 추가
-                                data.put("hasWeather", "true");
-                                data.put("weatherDescription", weatherResponse.getWeather().get(0).getDescription());
-                                data.put("temperature", String.valueOf(weatherResponse.getMain().getTemp()));
-                                data.put("feelsLike", String.valueOf(weatherResponse.getMain().getFeels_like()));
-                                data.put("humidity", String.valueOf(weatherResponse.getMain().getHumidity()));
-                                data.put("weatherIcon", weatherResponse.getWeather().get(0).getIcon());
-                                data.put("weatherType", weatherApiService.determineWeatherType(weatherResponse));
-
-                                // 알림 전송
-                                sendAndSaveNotification(user, title, bodyBuilder.toString(), data,
-                                    schedule.getId(), NOTIFICATION_TYPE_ROUTINE_START_REMINDER);
-
-                                log.info("루틴 시작 1시간 전 알림 전송 완료 (날씨 포함) - User ID: {}, Schedule ID: {}, 온도: {}°C",
-                                    user.getId(), schedule.getId(), weatherResponse.getMain().getTemp());
-                            },
-                            error -> {
-                                log.warn("루틴 시작 알림 중 날씨 정보 조회 실패 - Schedule ID: {}, 에러: {}",
-                                    schedule.getId(), error.getMessage());
-
-                                // 날씨 정보 없이 알림 전송
-                                data.put("hasWeather", "false");
-                                sendAndSaveNotification(user, title, bodyBuilder.toString(), data,
-                                    schedule.getId(), NOTIFICATION_TYPE_ROUTINE_START_REMINDER);
-
-                                log.info("루틴 시작 1시간 전 알림 전송 완료 (날씨 정보 없음) - User ID: {}, Schedule ID: {}",
-                                    user.getId(), schedule.getId());
-                            }
-                        );
-                } catch (Exception e) {
-                    log.error("날씨 API 호출 중 오류 발생 - Schedule ID: {}, 에러: {}", schedule.getId(), e.getMessage());
-
-                    // 날씨 정보 없이 알림 전송
-                    data.put("hasWeather", "false");
-                    sendAndSaveNotification(user, title, bodyBuilder.toString(), data,
-                        schedule.getId(), NOTIFICATION_TYPE_ROUTINE_START_REMINDER);
-                }
-            } else {
-                // 좌표 정보가 없는 경우 날씨 정보 없이 알림 전송
-                log.info("스케줄 ID {}에 좌표 정보가 없어 날씨 정보 없이 루틴 시작 알림을 전송합니다.", schedule.getId());
+                bodyBuilder.append("\n\n💻 온라인 일정이므로 편안한 곳에서 참여하세요!");
                 data.put("hasWeather", "false");
+                data.put("isRemote", "true");
+
                 sendAndSaveNotification(user, title, bodyBuilder.toString(), data,
                     schedule.getId(), NOTIFICATION_TYPE_ROUTINE_START_REMINDER);
+
+                log.info("✅ [ScheduleNotificationService] 비대면 일정 1시간 전 알림 전송 완료 - User ID: {}, Schedule ID: {}",
+                        user.getId(), schedule.getId());
+                return;
             }
 
+            // 대면 일정 - 출발지와 도착지 날씨 정보 조회
+            log.info("🚶 [ScheduleNotificationService] 대면 일정 - 날씨 정보 조회 시작 - Schedule ID: {}", schedule.getId());
+            fetchBothLocationWeathersForNotification(schedule, bodyBuilder, data)
+                .subscribe(
+                    weatherData -> {
+                        // 알림 전송
+                        sendAndSaveNotification(user, title, bodyBuilder.toString(), weatherData,
+                            schedule.getId(), NOTIFICATION_TYPE_ROUTINE_START_REMINDER);
+
+                        log.info("✅ [ScheduleNotificationService] 대면 일정 1시간 전 알림 전송 완료 (날씨 포함) - User ID: {}, Schedule ID: {}",
+                            user.getId(), schedule.getId());
+                    },
+                    error -> {
+                        log.warn("⚠️ [ScheduleNotificationService] 날씨 정보 조회 실패 - Schedule ID: {}, 에러: {}",
+                            schedule.getId(), error.getMessage());
+
+                        // 날씨 정보 없이 알림 전송
+                        data.put("hasWeather", "false");
+                        sendAndSaveNotification(user, title, bodyBuilder.toString(), data,
+                            schedule.getId(), NOTIFICATION_TYPE_ROUTINE_START_REMINDER);
+
+                        log.info("✅ [ScheduleNotificationService] 대면 일정 1시간 전 알림 전송 완료 (날씨 정보 없음) - User ID: {}, Schedule ID: {}",
+                            user.getId(), schedule.getId());
+                    }
+                );
+
         } catch (Exception e) {
-            log.error("루틴 시작 1시간 전 알림 전송 실패 - User ID: {}, Schedule ID: {}, 에러: {}",
+            log.error("❌ [ScheduleNotificationService] 루틴 시작 1시간 전 알림 전송 실패 - User ID: {}, Schedule ID: {}, 에러: {}",
                 user.getId(), schedule.getId(), e.getMessage(), e);
         }
+    }
+
+    /**
+     * 알림용 출발지와 도착지 날씨 정보를 조회합니다.
+     */
+    private Mono<Map<String, String>> fetchBothLocationWeathersForNotification(
+            Schedule schedule, StringBuilder bodyBuilder, Map<String, String> data) {
+
+        // 출발지 날씨 조회
+        Mono<WeatherResponse> startLocationWeatherMono =
+            (schedule.getStartX() != null && schedule.getStartY() != null) ?
+                weatherApiService.getCurrentWeather(schedule.getStartY(), schedule.getStartX())
+                        .onErrorResume(error -> Mono.empty()) : Mono.empty();
+
+        // 도착지 날씨 조회
+        Mono<WeatherResponse> destinationWeatherMono =
+            (schedule.getDestinationX() != null && schedule.getDestinationY() != null) ?
+                weatherApiService.getCurrentWeather(schedule.getDestinationY(), schedule.getDestinationX())
+                    .onErrorResume(error -> Mono.empty()) : Mono.empty();
+
+        return Mono.zip(startLocationWeatherMono, destinationWeatherMono)
+                .map(tuple -> {
+                    WeatherResponse startWeather = tuple.getT1();
+                    WeatherResponse destinationWeather = tuple.getT2();
+
+                    // 알림 메시지에 날씨 정보 추가
+                    if (startWeather != null || destinationWeather != null) {
+                        bodyBuilder.append("\n\n🌤️ 날씨 정보:");
+
+                        if (startWeather != null && schedule.getStartLocation() != null) {
+                            bodyBuilder.append(String.format("\n📍 %s: %s, %.1f°C",
+                                schedule.getStartLocation(),
+                                startWeather.getWeather().get(0).getDescription(),
+                                startWeather.getMain().getTemp()));
+                        }
+
+                        if (destinationWeather != null && schedule.getLocation() != null) {
+                            bodyBuilder.append(String.format("\n🎯 %s: %s, %.1f°C",
+                                schedule.getLocation(),
+                                destinationWeather.getWeather().get(0).getDescription(),
+                                destinationWeather.getMain().getTemp()));
+                        }
+                    }
+
+                    // FCM 데이터에 날씨 정보 추가
+                    data.put("hasWeather", "true");
+
+                    if (startWeather != null) {
+                        data.put("startWeatherDescription", startWeather.getWeather().get(0).getDescription());
+                        data.put("startTemperature", String.valueOf(startWeather.getMain().getTemp()));
+                        data.put("startFeelsLike", String.valueOf(startWeather.getMain().getFeels_like()));
+                        data.put("startHumidity", String.valueOf(startWeather.getMain().getHumidity()));
+                        data.put("startWeatherIcon", startWeather.getWeather().get(0).getIcon());
+                        data.put("startWeatherType", weatherApiService.determineWeatherType(startWeather));
+                    }
+
+                    if (destinationWeather != null) {
+                        data.put("destWeatherDescription", destinationWeather.getWeather().get(0).getDescription());
+                        data.put("destTemperature", String.valueOf(destinationWeather.getMain().getTemp()));
+                        data.put("destFeelsLike", String.valueOf(destinationWeather.getMain().getFeels_like()));
+                        data.put("destHumidity", String.valueOf(destinationWeather.getMain().getHumidity()));
+                        data.put("destWeatherIcon", destinationWeather.getWeather().get(0).getIcon());
+                        data.put("destWeatherType", weatherApiService.determineWeatherType(destinationWeather));
+                    }
+
+                    // 하위 호환성을 위해 기존 필드도 유지 (도착지 정보 사용)
+                    if (destinationWeather != null) {
+                        data.put("weatherDescription", destinationWeather.getWeather().get(0).getDescription());
+                        data.put("temperature", String.valueOf(destinationWeather.getMain().getTemp()));
+                        data.put("feelsLike", String.valueOf(destinationWeather.getMain().getFeels_like()));
+                        data.put("humidity", String.valueOf(destinationWeather.getMain().getHumidity()));
+                        data.put("weatherIcon", destinationWeather.getWeather().get(0).getIcon());
+                        data.put("weatherType", weatherApiService.determineWeatherType(destinationWeather));
+                    }
+
+                    return data;
+                })
+                .onErrorReturn(data); // 오류 시 원본 data 반환
     }
 }

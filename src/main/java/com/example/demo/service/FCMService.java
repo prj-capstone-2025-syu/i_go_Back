@@ -4,6 +4,7 @@ import com.google.firebase.messaging.*;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
+import java.util.HashMap; // [추가] HashMap import
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ExecutionException;
@@ -15,12 +16,13 @@ public class FCMService {
     // 단일 기기에 메시지 전송
     public String sendMessageToToken(String token, String title, String body, Map<String, String> data) {
         try {
+            // [수정] title과 body를 data 맵에 직접 추가
+            Map<String, String> fullData = new HashMap<>(data);
+            fullData.put("title", title);
+            fullData.put("body", body);
+
             Message message = Message.builder()
-                    .setNotification(Notification.builder()
-                            .setTitle(title)
-                            .setBody(body)
-                            .build())
-                    .putAllData(data)
+                    .putAllData(fullData) // 모든 정보를 data에 담아 전송
                     .setToken(token)
                     .build();
 
@@ -29,6 +31,8 @@ public class FCMService {
             return response;
         } catch (ExecutionException | InterruptedException e) {
             log.error("메시지 전송 실패", e);
+
+            Thread.currentThread().interrupt();
             throw new RuntimeException("FCM 메시지 전송 실패", e);
         }
     }
@@ -36,12 +40,14 @@ public class FCMService {
     // 여러 기기에 메시지 전송
     public BatchResponse sendMessageToTokens(List<String> tokens, String title, String body, Map<String, String> data) {
         try {
+            // [수정] title과 body를 data 맵에 직접 추가
+            Map<String, String> fullData = new HashMap<>(data);
+            fullData.put("title", title);
+            fullData.put("body", body);
+
             MulticastMessage message = MulticastMessage.builder()
-                    .setNotification(Notification.builder()
-                            .setTitle(title)
-                            .setBody(body)
-                            .build())
-                    .putAllData(data)
+                    // [수정] setNotification(...) 빌더 제거
+                    .putAllData(fullData)
                     .addAllTokens(tokens)
                     .build();
 
@@ -57,12 +63,14 @@ public class FCMService {
     // 특정 주제에 메시지 전송
     public String sendMessageToTopic(String topic, String title, String body, Map<String, String> data) {
         try {
+            // [수정] title과 body를 data 맵에 직접 추가
+            Map<String, String> fullData = new HashMap<>(data);
+            fullData.put("title", title);
+            fullData.put("body", body);
+
             Message message = Message.builder()
-                    .setNotification(Notification.builder()
-                            .setTitle(title)
-                            .setBody(body)
-                            .build())
-                    .putAllData(data)
+
+                    .putAllData(fullData)
                     .setTopic(topic)
                     .build();
 
@@ -71,6 +79,8 @@ public class FCMService {
             return response;
         } catch (ExecutionException | InterruptedException e) {
             log.error("토픽 메시지 전송 실패", e);
+            // [수정] 스레드 인터럽트 상태 복원
+            Thread.currentThread().interrupt();
             throw new RuntimeException("FCM 토픽 메시지 전송 실패", e);
         }
     }

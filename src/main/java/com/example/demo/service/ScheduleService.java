@@ -87,11 +87,26 @@ public class ScheduleService {
         // 지연 등록 알림 처리
         LocalDateTime now = LocalDateTime.now();
         if (startTime.isBefore(now)) {
+            log.info("🚨 [ScheduleService] 지연 등록 감지 - Schedule ID: {}, 계획 시작시간: {}, 현재시간: {}", 
+                    savedSchedule.getId(), startTime, now);
+            
             String currentRoutineItemName = routineService.getCurrentRoutineItemName(routineId, startTime, now);
             if (currentRoutineItemName != null) {
+                log.info("📱 [ScheduleService] 지연 등록 알림 전송 시작 - Schedule ID: {}, Current Item: {}, User ID: {}", 
+                        savedSchedule.getId(), currentRoutineItemName, user.getId());
+                
                 scheduleNotificationService.sendDelayedRoutineItemNotification(savedSchedule, user, currentRoutineItemName);
-                log.info("지연 등록 알림 처리 완료 - Schedule ID: {}, Current Item: {}", savedSchedule.getId(), currentRoutineItemName);
+
+
+                log.info("✅ [ScheduleService] 지연 등록 알림 처리 완료 - Schedule ID: {}, Current Item: {}",
+                        savedSchedule.getId(), currentRoutineItemName);
+            } else {
+                log.info("⚠️ [ScheduleService] 지연 등록이지만 현재 시간에 해당하는 루틴 아이템 없음 - Schedule ID: {}", 
+                        savedSchedule.getId());
             }
+        } else {
+            log.info("⏰ [ScheduleService] 대상 등록 - Schedule ID: {}, 시작까지 남은 시간: {}분",
+                    savedSchedule.getId(), java.time.Duration.between(now, startTime).toMinutes());
         }
 
         return savedSchedule;
@@ -166,7 +181,7 @@ public class ScheduleService {
             String currentRoutineItemName = routineService.getCurrentRoutineItemName(routineId, startTime, now);
             if (currentRoutineItemName != null) {
                 scheduleNotificationService.sendDelayedRoutineItemNotification(savedSchedule, schedule.getUser(), currentRoutineItemName);
-                log.info("일정 수정 시 지연 등록 알림 처리 완료 - Schedule ID: {}, Current Item: {}", savedSchedule.getId(), currentRoutineItemName);
+                log.info("일�� 수정 시 지연 등록 알림 처리 완료 - Schedule ID: {}, Current Item: {}", savedSchedule.getId(), currentRoutineItemName);
             }
         }
 
@@ -437,7 +452,7 @@ public class ScheduleService {
     }
 
     /**
-     * 날씨 업데이트 대상 활성 스케줄 조회 (진행 중이거나 24시간 이내 시작 예정)
+     * 날씨 업데이�� 대상 활성 스케줄 조회 (진행 중이거나 24시간 이내 시작 예정)
      */
     @Transactional(readOnly = true)
     public List<Schedule> getActiveSchedulesForWeatherUpdate(LocalDateTime now) {

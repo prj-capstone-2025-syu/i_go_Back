@@ -205,19 +205,13 @@ public class ScheduleWeatherService {
 
     /**
      * 스케줄에 대한 날씨 정보를 처리합니다.
-     * 시간 기반으로 날씨 API를 선택합니다.
+     * 출발지와 도착지 두 곳의 날씨 정보를 가져옵니다.
      */
     private Mono<Optional<ScheduleWeatherResponse>> processScheduleWeather(Schedule schedule) {
         LocalDateTime now = LocalDateTime.now();
         long daysUntilSchedule = ChronoUnit.DAYS.between(now, schedule.getStartTime());
 
         ScheduleWeatherResponse response = ScheduleWeatherResponse.fromSchedule(schedule);
-
-        // 좌표가 없는 경우
-        if (schedule.getDestinationY() == null || schedule.getDestinationX() == null) {
-            log.warn("스케줄 ID {}에 좌표 정보가 없어 날씨 정보를 가져올 수 없습니다.", schedule.getId());
-            return Mono.just(Optional.of(response));
-        }
 
         // 5일 이후 스케줄인 경우 날씨 정보 없이 반환
         if (daysUntilSchedule > MAX_FORECAST_DAYS) {
@@ -244,96 +238,94 @@ public class ScheduleWeatherService {
             return Mono.just(Optional.of(response));
         }
 
-        // 시간 기반 날씨 API 선택
-        // 당일 또는 내일 스케줄인 경우 OR 진행 중인 경우 = 현재 날씨 조회
-        if (daysUntilSchedule <= 1 || isInProgress) {
-            return fetchCurrentWeather(schedule, response);
-        } else {
-            // 2~5일 후 스케줄인 경우 예보 조회
-            return fetchForecastWeather(schedule, response);
-        }
+        // 출발지와 도착지 날씨 정보 조회
+        return fetchBothLocationWeathers(schedule, response, daysUntilSchedule, isInProgress);
     }
 
     /**
-     * 현재 날씨 정보 조회
+     * 출발지와 도착지 두 곳의 날씨 정보를 조회합니다.
      */
-    private Mono<Optional<ScheduleWeatherResponse>> fetchCurrentWeather(Schedule schedule, ScheduleWeatherResponse response) {
-        return weatherApiService.getCurrentWeather(schedule.getDestinationY(), schedule.getDestinationX())
-                .map(weatherResponse -> {
-                    ScheduleWeatherResponse.WeatherInfo weatherInfo = createWeatherInfo(weatherResponse);
-                    response.setWeather(weatherInfo);
+    private Mono<Optional<ScheduleWeatherResponse>> fetchBothLocationWeathers(
+            Schedule schedule, ScheduleWeatherResponse response, long daysUntilSchedule, boolean isInProgress) {
 
-                    // 캐시에 저장
-                    weatherCache.put(schedule.getId(), weatherInfo);
-                    weatherCacheTime.put(schedule.getId(), LocalDateTime.now());
+        // 출발지 날씨와 도착지 날씨를 병렬로 조회
+        Mono<ScheduleWeatherResponse.WeatherInfo> startLocationWeatherMono = fetchWeatherForLocation(
+                schedule.getStartX(), schedule.getStartY(), "출발지", daysUntilSchedule, isInProgress);
 
-                    log.info("현재 날씨 정보 조회 성공 - 스케줄 ID: {}, 온도: {}°C, 날씨: {}",
-                            schedule.getId(), weatherResponse.getMain().getTemp(),
-                            weatherResponse.getWeather().get(0).getDescription());
-                    return Optional.of(response);
-                })
-                .doOnError(error -> log.error("현재 날씨 정보 조회 실패 - 스케줄 ID: {}, 에러: {}",
-                        schedule.getId(), error.getMessage()))
-                .onErrorReturn(Optional.of(response));
-    }
+        Mono<ScheduleWeatherResponse.WeatherInfo> destinationWeatherMono = fetchWeatherForLocation(
+                schedule.getDestinationX(), schedule.getDestinationY(), "도착지", daysUntilSchedule, isInProgress);
 
-    /**
-     * 예보 날씨 정보 조회 (2~5일 후)
-     *
-     * TODO: 추후 개선 사항 - 3시간 간격 예보 리스트 제공 기능
-     * 현재는 스케줄 시간과 가장 가까운 단일 예보만 제공하지만,
-     * 스케줄 며칠 전부터는 하루 종일의 3시간 간격 예보를 제공하는 것도 유용할 수 있음
-     *
-     * 예시 구현 아이디어:
-     * - 3일 이상 전: 해당 날짜의 전체 3시간 간격 예보 리스트 (8개: 00시, 03시, 06시, ..., 21시)
-     * - 2일 전: 스케줄 시간 기준 ±6시간 예보 리스트 (3~5개)
-     * - 1일 전: 스케줄 시간과 가장 가까운 예보 1개
-     * - 진행 중: 실시간 현재 날씨
-     *
-     * 장점: 사용자가 하루 종일의 날씨 변화를 미리 파악 가능
-     * 단점: 데이터량 증가, UI 복잡성 증가
-     */
-    private Mono<Optional<ScheduleWeatherResponse>> fetchForecastWeather(Schedule schedule, ScheduleWeatherResponse response) {
-        return weatherApiService.getForecast(schedule.getDestinationY(), schedule.getDestinationX())
-                .map(forecastResponse -> {
-                    // 현재: 스케줄 시간과 가장 가까운 단일 예보만 선택
-                    var closestForecast = findClosestForecast(forecastResponse, schedule.getStartTime());
+        return Mono.zip(startLocationWeatherMono, destinationWeatherMono)
+                .map(tuple -> {
+                    ScheduleWeatherResponse.WeatherInfo startWeather = tuple.getT1();
+                    ScheduleWeatherResponse.WeatherInfo destinationWeather = tuple.getT2();
 
-                    /* TODO: 3시간 간격 예보 리스트 기능 구현 시 아래 주석 해제 및 수정
-                    long daysUntilSchedule = ChronoUnit.DAYS.between(LocalDateTime.now(), schedule.getStartTime());
+                    response.setStartLocationWeather(startWeather);
+                    response.setDestinationWeather(destinationWeather);
+                    response.setWeather(destinationWeather); // 하위 호환성
 
-                    if (daysUntilSchedule >= 3) {
-                        // 3일 이상 전: 해당 날짜의 전체 예보 리스트
-                        var dailyForecasts = getDailyForecastList(forecastResponse, schedule.getStartTime());
-                        response.setWeatherList(dailyForecasts); // 새로운 필드 필요
-                    } else if (daysUntilSchedule >= 2) {
-                        // 2일 전: 스케줄 시간 기준 ±6시간 예보
-                        var nearbyForecasts = getNearbyForecastList(forecastResponse, schedule.getStartTime(), 6);
-                        response.setWeatherList(nearbyForecasts);
-                    } else {
-                        // 1일 전: 기존 로직 (단일 예보)
-                        response.setWeather(weatherInfo);
-                    }
-                    */
-
-                    if (closestForecast.isPresent()) {
-                        ScheduleWeatherResponse.WeatherInfo weatherInfo = createWeatherInfoFromForecast(closestForecast.get());
-                        response.setWeather(weatherInfo);
-
-                        // 캐시에 저장
-                        weatherCache.put(schedule.getId(), weatherInfo);
+                    // 도착지 날씨만 캐시 (기존 로직 유지)
+                    if (destinationWeather != null) {
+                        weatherCache.put(schedule.getId(), destinationWeather);
                         weatherCacheTime.put(schedule.getId(), LocalDateTime.now());
-
-                        log.info("예보 날씨 정보 조회 성공 - 스케줄 ID: {}, 온도: {}°C",
-                                schedule.getId(), closestForecast.get().getMain().getTemp());
-                    } else {
-                        log.warn("스케줄 ID {}에 대한 적절한 예보 데이터를 찾을 수 없습니다.", schedule.getId());
                     }
+
+                    log.info("날씨 정보 조회 완료 - 스케줄 ID: {}, 출발지 온도: {}°C, 도착지 온도: {}°C",
+                            schedule.getId(),
+                            startWeather != null ? startWeather.getTemperature() : "없음",
+                            destinationWeather != null ? destinationWeather.getTemperature() : "없음");
+
                     return Optional.of(response);
                 })
-                .doOnError(error -> log.error("예보 날씨 정보 조회 실패 - 스케줄 ID: {}, 에러: {}",
-                        schedule.getId(), error.getMessage()))
-                .onErrorReturn(Optional.of(response));
+                .onErrorResume(error -> {
+                    log.error("날씨 정보 조회 실패 - 스케줄 ID: {}, 에러: {}", schedule.getId(), error.getMessage());
+                    return Mono.just(Optional.of(response));
+                });
+    }
+
+    /**
+     * 특정 위치의 날씨 정보를 조회합니다.
+     */
+    private Mono<ScheduleWeatherResponse.WeatherInfo> fetchWeatherForLocation(Double longitude, Double latitude,
+                                                                              String locationName, long daysUntilSchedule, boolean isInProgress) {
+        // 좌표가 없는 경우 null 반환
+        if (longitude == null || latitude == null) {
+            log.debug("{} 좌표 정보가 없습니다.", locationName);
+            return Mono.just(null);
+        }
+
+        // 시간 기반 API 선택
+        if (daysUntilSchedule <= 1 || isInProgress) {
+            // 현재 날씨 조회
+            return weatherApiService.getCurrentWeather(latitude, longitude)
+                    .map(weatherResponse -> {
+                        log.debug("{} 현재 날씨 조회 성공 - 온도: {}°C", locationName, weatherResponse.getMain().getTemp());
+                        return createWeatherInfo(weatherResponse);
+                    })
+                    .onErrorResume(error -> {
+                        log.warn("{} 현재 날씨 조회 실패: {}", locationName, error.getMessage());
+                        return Mono.just(null);
+                    });
+        } else {
+            // 예보 조회
+            return weatherApiService.getForecast(latitude, longitude)
+                    .map(forecastResponse -> {
+                        var closestForecast = findClosestForecast(forecastResponse,
+                                LocalDateTime.now().plusDays(daysUntilSchedule));
+                        if (closestForecast.isPresent()) {
+                            log.debug("{} 예보 날씨 조회 성공 - 온도: {}°C", locationName,
+                                    closestForecast.get().getMain().getTemp());
+                            return createWeatherInfoFromForecast(closestForecast.get());
+                        } else {
+                            log.warn("{} 적절한 예보 데이터를 찾을 수 없습니다.", locationName);
+                            return null;
+                        }
+                    })
+                    .onErrorResume(error -> {
+                        log.warn("{} 예보 날씨 조회 실패: {}", locationName, error.getMessage());
+                        return Mono.just(null);
+                    });
+        }
     }
 
     /**

@@ -28,7 +28,7 @@ public class RoutineService {
     public List<RoutineResponseDTO> getAllRoutinesByUserId(Long userId) {
         User user = getUserById(userId);
         // 기존 코드: List<Routine> routines = routineRepository.findAllByUserId(user);
-        List<Routine> routines = routineRepository.findAllByUser(user); // 수정된 코드
+        List<Routine> routines = routineRepository.findAllByUser(user);
         return routines.stream()
                 .map(this::convertToRoutineResponseDTO)
                 .collect(Collectors.toList());
@@ -239,7 +239,7 @@ public class RoutineService {
         // RoutineItem을 orderIndex 순으로 정렬
         List<RoutineItem> sortedItems = routine.getItems().stream()
                 .sorted(Comparator.comparingInt(RoutineItem::getOrderIndex))
-                .collect(Collectors.toList());
+                .toList();
 
         for (RoutineItem item : sortedItems) {
             LocalDateTime itemEndTime = currentItemStartTime.plusMinutes(item.getDurationMinutes());
@@ -263,7 +263,7 @@ public class RoutineService {
 
         for (CalculatedRoutineItemTime itemTime : calculatedTimes) {
             if (!currentTime.isBefore(itemTime.getStartTime()) && currentTime.isBefore(itemTime.getEndTime())) {
-                return itemTime.getItemName();
+                return itemTime.getRoutineItemName();
             }
         }
 
@@ -271,7 +271,7 @@ public class RoutineService {
         if (!calculatedTimes.isEmpty()) {
             CalculatedRoutineItemTime lastItem = calculatedTimes.get(calculatedTimes.size() - 1);
             if (!currentTime.isBefore(lastItem.getEndTime())) {
-                return lastItem.getItemName();
+                return lastItem.getRoutineItemName();
             }
         }
 

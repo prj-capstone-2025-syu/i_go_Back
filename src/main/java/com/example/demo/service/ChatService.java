@@ -4,38 +4,40 @@ import com.example.demo.dto.chat.ChatRequest;
 import com.example.demo.dto.chat.ChatResponse;
 import com.example.demo.dto.schedule.CreateScheduleRequest;
 import com.example.demo.entity.schedule.Schedule;
+import com.theokanning.openai.completion.chat.ChatCompletionRequest;
+import com.theokanning.openai.completion.chat.ChatCompletionResult;
+import com.theokanning.openai.completion.chat.ChatMessage;
+import com.theokanning.openai.service.OpenAiService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.http.HttpEntity;
-import org.springframework.http.HttpHeaders;
-import org.springframework.http.HttpStatus;
-import org.springframework.http.MediaType;
-import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
-import org.springframework.web.client.HttpClientErrorException;
-import org.springframework.web.client.ResourceAccessException;
-import org.springframework.web.client.RestTemplate;
 
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 @Slf4j
 @Service
 @RequiredArgsConstructor
 public class ChatService {
     private final ScheduleService scheduleService;
-    private final RestTemplate restTemplate;
+    private final OpenAiService openAiService;
 
-    @Value("${exaone.api.url}")
-    private String exaoneApiUrl;
+    @Value("${openai.model}")
+    private String openaiModel;
 
-    // 사용자별 session_id 저장 (Redis로 수정 예정)
-    private final Map<Long, String> sessionMap = new ConcurrentHashMap<>();
+    @Value("${openai.max.tokens}")
+    private int maxTokens;
+
+    @Value("${openai.temperature}")
+    private double temperature;
+
+    // 사용자별 대화 히스토리 저장 (Redis로 수정 예정)
+    private final Map<Long, List<ChatMessage>> conversationHistory = new ConcurrentHashMap<>();
 
     public ChatResponse processMessage(ChatRequest request) {
         try {
@@ -49,28 +51,26 @@ public class ChatService {
             }
 
             log.debug("Processing chat message: {}", request.getMessage());
-            String sessionId = getOrCreateSessionId(request.getUserId());
 
-            // API 서버 호출 및 응답 처리
-            Map<String, Object> exaoneResponse = callExaoneApi(request.getMessage(), sessionId, request.getUserId());
+            // OpenAI 파인튜닝 모델 호출
+            String aiResponse = callOpenAI(request.getMessage(), request.getUserId());
 
-            String intentRaw = (String) exaoneResponse.get("intent");
-            String responseText = (String) exaoneResponse.get("response"); // AI의 자연어 답변
-            Map<String, Object> slots = (Map<String, Object>) exaoneResponse.get("slots");
+            // AI 응답에서 의도와 슬롯 정보 추출
+            Map<String, Object> parsedResponse = parseAIResponse(aiResponse);
 
-            // 디버깅을 위한 로그 추가
-            log.debug("Exaone response - intent: {}, response: {}", intentRaw, responseText);
-            log.info("Exaone API response raw slots: {}", slots); // Log the raw slots from Exaone
+            String intent = (String) parsedResponse.get("intent");
+            String responseText = (String) parsedResponse.get("response");
+            Map<String, Object> slots = (Map<String, Object>) parsedResponse.get("slots");
+
+            log.debug("OpenAI response - intent: {}, response: {}", intent, responseText);
 
             // intent가 없으면 자연어 답변만 반환
-            if (intentRaw == null) {
+            if (intent == null || intent.equals("GENERAL")) {
                 return ChatResponse.builder()
-                        .message(responseText != null ? responseText : "AI가 답변을 반환하지 않았습니다.")
+                        .message(responseText != null ? responseText : aiResponse)
                         .success(true)
                         .build();
             }
-
-            String intent = mapIntent(intentRaw);
 
             switch (intent) {
                 case "CREATE_SCHEDULE":
@@ -94,107 +94,117 @@ public class ChatService {
         }
     }
 
-    // session_id가 없으면 FastAPI /chat 호출해서 생성
-    private String getOrCreateSessionId(Long userId) {
-        if (userId == null) {
-            log.warn("Cannot create session ID for null userId");
-            return null;
-        }
-
-        if (sessionMap.containsKey(userId)) {
-            return sessionMap.get(userId);
-        }
-
+    private String callOpenAI(String message, Long userId) {
         try {
-            // FastAPI /chat 호출
-            HttpHeaders headers = new HttpHeaders();
-            headers.setContentType(MediaType.APPLICATION_JSON);
-            Map<String, Object> body = new HashMap<>();
-            body.put("query", "안녕"); // 아무 메시지나, 세션 생성용
-            body.put("session_id", null);
-            HttpEntity<Map<String, Object>> entity = new HttpEntity<>(body, headers);
+            // 대화 히스토리 가져오기
+            List<ChatMessage> messages = getConversationHistory(userId);
 
-            String chatUrl = exaoneApiUrl + "/chat";
-            log.debug("Calling EXAONE API to create session: {}", chatUrl);
-
-            ResponseEntity<Map> response = restTemplate.postForEntity(chatUrl, entity, Map.class);
-            log.debug("Session creation response status: {}", response.getStatusCode());
-
-            String sessionId = (String) response.getBody().get("session_id");
-            if (sessionId == null) {
-                log.warn("Received null session_id from API");
-                return null;
+            // 시스템 프롬프트 추가 (파인튜닝 모델에 맞는 프롬프트)
+            if (messages.isEmpty()) {
+                ChatMessage systemMessage = new ChatMessage("system",
+                    "당신은 IGO 앱의 일정 관리 도우미입니다. 사용자의 요청을 분석하여 다음 형식으로 응답해주세요:\n" +
+                    "INTENT: [CREATE_SCHEDULE|QUERY_SCHEDULE|DELETE_SCHEDULE|GENERAL]\n" +
+                    "SLOTS: {\"title\": \"값\", \"datetime\": \"yyyy-MM-ddTHH:mm\", \"location\": \"값\", \"memo\": \"값\", \"supplies\": \"값\"}\n" +
+                    "RESPONSE: 사용자에게 보여줄 자연어 응답\n\n" +
+                    "일정 생성, 조회, 삭제와 관련된 요청이 아니면 INTENT를 GENERAL로 설정하고 자연스러운 대화를 해주세요.");
+                messages.add(systemMessage);
             }
 
-            sessionMap.put(userId, sessionId);
-            log.debug("Created new session ID: {} for user: {}", sessionId, userId);
-            return sessionId;
-        } catch (ResourceAccessException e) {
-            log.error("Cannot connect to EXAONE API for session creation: {}", e.getMessage(), e);
-            return null;
+            // 사용자 메시지 추가
+            messages.add(new ChatMessage("user", message));
+
+            ChatCompletionRequest completionRequest = ChatCompletionRequest.builder()
+                    .model(openaiModel)
+                    .messages(messages)
+                    .maxTokens(maxTokens)
+                    .temperature(temperature)
+                    .build();
+
+            ChatCompletionResult result = openAiService.createChatCompletion(completionRequest);
+            String response = result.getChoices().get(0).getMessage().getContent();
+
+            // AI 응답을 대화 히스토리에 추가
+            messages.add(new ChatMessage("assistant", response));
+
+            // 히스토리 크기 제한 (최근 20개 메시지만 유지)
+            if (messages.size() > 20) {
+                messages = messages.subList(messages.size() - 20, messages.size());
+            }
+            conversationHistory.put(userId, messages);
+
+            log.debug("OpenAI API response: {}", response);
+            return response;
+
         } catch (Exception e) {
-            log.error("Error creating session ID: {}", e.getMessage(), e);
-            return null;
+            log.error("Error calling OpenAI API: {}", e.getMessage(), e);
+            return "AI 서비스에 일시적인 문제가 발생했습니다. 잠시 후 다시 시도해주세요.";
         }
     }
 
-    private Map<String, Object> callExaoneApi(String message, String sessionId, Long userId) {
-        if (message == null || message.trim().isEmpty()) {
-            log.warn("Empty message provided to API");
-            Map<String, Object> errorResponse = new HashMap<>();
-            errorResponse.put("response", "메시지가 비어 있습니다.");
-            return errorResponse;
-        }
+    private List<ChatMessage> getConversationHistory(Long userId) {
+        return conversationHistory.getOrDefault(userId, new ArrayList<>());
+    }
 
-        if (sessionId == null) {
-            log.warn("Null sessionId provided to API. Using default behavior without session.");
-        }
-
-        HttpHeaders headers = new HttpHeaders();
-        headers.setContentType(MediaType.APPLICATION_JSON);
-
-        Map<String, Object> requestBody = new HashMap<>();
-        requestBody.put("query", message);
-        requestBody.put("session_id", sessionId);
-
-        HttpEntity<Map<String, Object>> entity = new HttpEntity<>(requestBody, headers);
-        String parseUrl = exaoneApiUrl + "/parse"; // 이미 올바른 엔드포인트 설정
-
-        log.debug("Calling EXAONE API: {} with request: {}", parseUrl, requestBody);
+    private Map<String, Object> parseAIResponse(String aiResponse) {
+        Map<String, Object> result = new HashMap<>();
 
         try {
-            ResponseEntity<Map> response = restTemplate.postForEntity(parseUrl, entity, Map.class);
-            log.debug("EXAONE API response status: {}", response.getStatusCode());
-            return response.getBody();
-        } catch (HttpClientErrorException e) {
-            log.error("HTTP error from API: {} - {}", e.getStatusCode(), e.getResponseBodyAsString(), e);
-
-            // 400 에러면 세션 재생성 시도
-            if (e.getStatusCode() == HttpStatus.BAD_REQUEST && userId != null) {
-                log.info("Session might have expired, recreating...");
-                sessionMap.remove(userId);
-                String newSessionId = getOrCreateSessionId(userId);
-                if (newSessionId != null) {
-                    return callExaoneApi(message, newSessionId, userId);
-                }
+            // INTENT 추출
+            Pattern intentPattern = Pattern.compile("INTENT:\\s*([A-Z_]+)");
+            Matcher intentMatcher = intentPattern.matcher(aiResponse);
+            if (intentMatcher.find()) {
+                result.put("intent", intentMatcher.group(1));
             }
 
-            // 오류에 대한 응답 생성
-            Map<String, Object> errorResponse = new HashMap<>();
-            errorResponse.put("response", "AI 서비스에 일시적인 문제가 발생했습니다. 잠시 후 다시 시도해주세요.");
-            return errorResponse;
-        } catch (ResourceAccessException e) {
-            // 서버 연결 오류 (타임아웃, 네트워크 문제 등)
-            log.error("Cannot connect to API server: {}", e.getMessage(), e);
-            Map<String, Object> errorResponse = new HashMap<>();
-            errorResponse.put("response", "AI 서버에 연결할 수 없습니다. 네트워크 연결을 확인하거나 잠시 후 다시 시도해주세요.");
-            return errorResponse;
+            // SLOTS 추출 (JSON 형태)
+            Pattern slotsPattern = Pattern.compile("SLOTS:\\s*(\\{[^}]+\\})");
+            Matcher slotsMatcher = slotsPattern.matcher(aiResponse);
+            if (slotsMatcher.find()) {
+                String slotsJson = slotsMatcher.group(1);
+                // 간단한 JSON 파싱 (실제로는 ObjectMapper 사용 권장)
+                Map<String, Object> slots = parseSimpleJson(slotsJson);
+                result.put("slots", slots);
+            }
+
+            // RESPONSE 추출
+            Pattern responsePattern = Pattern.compile("RESPONSE:\\s*(.+?)(?=\\n|$)");
+            Matcher responseMatcher = responsePattern.matcher(aiResponse);
+            if (responseMatcher.find()) {
+                result.put("response", responseMatcher.group(1).trim());
+            } else {
+                // RESPONSE가 없으면 전체 응답을 사용
+                result.put("response", aiResponse);
+            }
+
         } catch (Exception e) {
-            log.error("Unexpected error calling API: {}", e.getMessage(), e);
-            Map<String, Object> errorResponse = new HashMap<>();
-            errorResponse.put("response", "AI 서비스 처리 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.");
-            return errorResponse;
+            log.warn("Error parsing AI response: {}", e.getMessage());
+            result.put("response", aiResponse);
         }
+
+        return result;
+    }
+
+    private Map<String, Object> parseSimpleJson(String jsonStr) {
+        Map<String, Object> result = new HashMap<>();
+        try {
+            // 간단한 JSON 파싱 (실제 프로덕션에서는 ObjectMapper 사용 권장)
+            jsonStr = jsonStr.replaceAll("[{}]", "");
+            String[] pairs = jsonStr.split(",");
+
+            for (String pair : pairs) {
+                String[] keyValue = pair.split(":");
+                if (keyValue.length == 2) {
+                    String key = keyValue[0].trim().replaceAll("\"", "");
+                    String value = keyValue[1].trim().replaceAll("\"", "");
+                    if (!value.equals("null") && !value.isEmpty()) {
+                        result.put(key, value);
+                    }
+                }
+            }
+        } catch (Exception e) {
+            log.warn("Error parsing simple JSON: {}", e.getMessage());
+        }
+        return result;
     }
 
     private ChatResponse handleCreateSchedule(Long userId, Map<String, Object> slots) {

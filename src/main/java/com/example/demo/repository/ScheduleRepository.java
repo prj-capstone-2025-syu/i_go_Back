@@ -18,14 +18,19 @@ public interface ScheduleRepository extends JpaRepository<Schedule, Long> {
     List<Schedule> findByUserIdAndTitleAndStartTime(Long userId, String title, LocalDateTime startTime);
     List<Schedule> findByUserIdAndStartTime(Long userId, LocalDateTime startTime);
     List<Schedule> findByUserIdAndTitle(Long userId, String title);
-    @Query("SELECT s FROM Schedule s WHERE s.startTime >= :startTimeStart AND s.startTime < :startTimeEnd AND s.status = :status AND s.user.fcmToken IS NOT NULL AND s.user.fcmToken <> ''")
+
+    // PENDING 상태 스케줄 조회 (준비물 알림, 스케줄 시작 알림용)
+    // User를 FETCH JOIN으로 즉시 로딩
+    @Query("SELECT s FROM Schedule s JOIN FETCH s.user WHERE s.startTime >= :startTimeStart AND s.startTime < :startTimeEnd AND s.status = :status AND s.user.fcmToken IS NOT NULL AND s.user.fcmToken <> ''")
     List<Schedule> findByStartTimeBetweenAndStatusAndUserFcmTokenIsNotNull(
             @Param("startTimeStart") LocalDateTime startTimeStart,
             @Param("startTimeEnd") LocalDateTime startTimeEnd,
             @Param("status") Schedule.ScheduleStatus status
     );
+
     // IN_PROGRESS 상태이고 FCM 토큰이 있는 사용자의 스케줄 조회
-    @Query("SELECT s FROM Schedule s WHERE s.status = :status AND s.user.fcmToken IS NOT NULL AND s.user.fcmToken <> ''")
+    // User를 FETCH JOIN으로 즉시 로딩
+    @Query("SELECT s FROM Schedule s JOIN FETCH s.user WHERE s.status = :status AND s.user.fcmToken IS NOT NULL AND s.user.fcmToken <> ''")
     List<Schedule> findByStatusAndUserFcmTokenIsNotNull(@Param("status") Schedule.ScheduleStatus status);
 
     // 진행 중인 일정 조회 (startTime <= now AND endTime > now), 가장 최근 시작된 것 우선
@@ -47,9 +52,12 @@ public interface ScheduleRepository extends JpaRepository<Schedule, Long> {
     );
 
     // 특정 시간에 시작하고 루틴이 있는 PENDING 상태의 스케줄 조회 (루틴 시작 1시간 전 알림용)
-    @Query("SELECT s FROM Schedule s WHERE s.startTime = :startTime AND s.status = :status AND s.routineId IS NOT NULL AND s.user.fcmToken IS NOT NULL AND s.user.fcmToken <> ''")
+    // 시간 범위로 변경하여 초/나노초 차이로 인한 매칭 실패 방지
+    // User를 FETCH JOIN으로 즉시 로딩하여 LazyInitializationException 방지
+    @Query("SELECT s FROM Schedule s JOIN FETCH s.user WHERE s.startTime BETWEEN :startTime AND :endTime AND s.status = :status AND s.routineId IS NOT NULL AND s.user.fcmToken IS NOT NULL AND s.user.fcmToken <> ''")
     List<Schedule> findByStartTimeAndStatusAndRoutineIdNotNull(
             @Param("startTime") LocalDateTime startTime,
+            @Param("endTime") LocalDateTime endTime,
             @Param("status") Schedule.ScheduleStatus status
     );
 
