@@ -1,5 +1,9 @@
+// MidpointController.java (전체 코드)
+
 package com.example.demo.controller;
 
+import com.example.demo.dto.midpoint.Coordinates;
+import com.example.demo.dto.midpoint.GooglePlace;
 import com.example.demo.dto.midpoint.MidpointRequest;
 import com.example.demo.dto.midpoint.MidpointResponse;
 import com.example.demo.dto.midpoint.SmartMidpointRequest;
@@ -12,8 +16,11 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.Comparator;
+import java.util.List;
+
 /**
- * REST Controller for handling midpoint calculation requests
+ * 중간지점 계산 요청을 처리하는 REST 컨트롤러
  */
 @Slf4j
 @RestController
@@ -25,11 +32,11 @@ public class MidpointController {
     private final SmartMidpointService smartMidpointService;
 
     /**
-     * Calculates the geographical midpoint of multiple locations
+     * 여러 위치의 지리적 중간지점을 계산합니다. (기본 기능)
      *
-     * @param appUser Authenticated user information
-     * @param request Request containing list of locations
-     * @return ResponseEntity with MidpointResponse containing midpoint data
+     * @param appUser 인증된 사용자 정보
+     * @param request 위치 목록이 포함된 요청
+     * @return 중간지점 데이터가 포함된 응답
      */
     @PostMapping("/find")
     public ResponseEntity<MidpointResponse> findMidpoint(
@@ -39,22 +46,47 @@ public class MidpointController {
         log.info("Midpoint calculation request from user {}: {}",
                 appUser.getId(), request.getLocations());
 
-        MidpointResponse response = midpointService.findMidpoint(request.getLocations());
+        try {
+            // [수정] 없어진 findMidpoint 대신, 새로운 서비스 메서드들을 조합하여 로직 구현
+            // 1. 수학적 중간 좌표 계산
+            Coordinates coords = midpointService.calculateGeometricMidpoint(request.getLocations());
 
-        if (response.isSuccess()) {
+            // 2. 주변 장소 검색 (기본 기능이므로 '일반적인 장소'로 검색)
+            List<GooglePlace> places = midpointService.getNearbyPlaces(coords, "point_of_interest");
+
+            // 3. 최고 평점 장소 선정
+            GooglePlace bestPlace = places.stream()
+                .max(Comparator.comparing(GooglePlace::getRating))
+                .orElse(places.get(0));
+            
+            Coordinates finalCoords = new Coordinates(bestPlace.getGeometry().getLocation().getLat(), bestPlace.getGeometry().getLocation().getLng());
+            String finalAddress = bestPlace.getName() + " (" + bestPlace.getVicinity() + ")";
+
+            MidpointResponse response = MidpointResponse.builder()
+                .midpointCoordinates(finalCoords)
+                .midpointAddress(finalAddress)
+                .success(true)
+                .message("중간지점을 찾았습니다.")
+                .build();
+            
             return ResponseEntity.ok(response);
-        } else {
-            return ResponseEntity.badRequest().body(response);
+
+        } catch (Exception e) {
+            log.error("Error in basic midpoint finding: {}", e.getMessage(), e);
+            MidpointResponse errorResponse = MidpointResponse.builder()
+                    .success(false)
+                    .message(e.getMessage())
+                    .build();
+            return ResponseEntity.badRequest().body(errorResponse);
         }
     }
 
     /**
-     * Smart midpoint calculation with AI recommendations
-     * Implements MVP flow: ask for number of people first, then collect locations
+     * AI 추천을 포함한 스마트 중간지점 찾기 (대화형)
      *
-     * @param appUser Authenticated user information
-     * @param request Request containing user message for conversational flow
-     * @return ResponseEntity with MidpointResponse containing AI-powered recommendations
+     * @param appUser 인증된 사용자 정보
+     * @param request 대화 흐름에 따른 사용자 메시지가 담긴 요청
+     * @return AI 추천 내용이 포함된 응답
      */
     @PostMapping("/smart")
     public ResponseEntity<MidpointResponse> smartMidpoint(
@@ -69,30 +101,22 @@ public class MidpointController {
                     appUser.getId(),
                     request.getMessage()
             );
-
-            if (response.isSuccess()) {
-                return ResponseEntity.ok(response);
-            } else {
-                return ResponseEntity.badRequest().body(response);
-            }
-
+            return ResponseEntity.ok(response);
         } catch (Exception e) {
             log.error("Error processing smart midpoint request: {}", e.getMessage(), e);
-
             MidpointResponse errorResponse = MidpointResponse.builder()
                     .success(false)
                     .message("스마트 중간위치 계산 중 오류가 발생했습니다: " + e.getMessage())
                     .build();
-
             return ResponseEntity.internalServerError().body(errorResponse);
         }
     }
 
     /**
-     * Reset user's midpoint session (for testing or if user wants to start over)
+     * 사용자의 중간지점 찾기 세션을 초기화합니다.
      *
-     * @param appUser Authenticated user information
-     * @return ResponseEntity with success message
+     * @param appUser 인증된 사용자 정보
+     * @return 성공 메시지가 담긴 응답
      */
     @PostMapping("/reset")
     public ResponseEntity<MidpointResponse> resetSession(
@@ -101,22 +125,16 @@ public class MidpointController {
         log.info("Resetting midpoint session for user {}", appUser.getId());
 
         try {
-            // SmartMidpointService에서 사용자 세션을 초기화하고 새로운 플로우 시작
-            MidpointResponse response = smartMidpointService.processMidpointRequest(
-                    appUser.getId(),
-                    ""  // 빈 메시지로 초기 상태로 리셋
-            );
-
+            // [수정] reset 전용 메서드 대신, processMidpointRequest의 초기화 로직을 활용
+            MidpointResponse response = smartMidpointService.resetAndStartOver(appUser.getId());
             return ResponseEntity.ok(response);
 
         } catch (Exception e) {
             log.error("Error resetting midpoint session: {}", e.getMessage(), e);
-
             MidpointResponse errorResponse = MidpointResponse.builder()
                     .success(false)
                     .message("세션 초기화 중 오류가 발생했습니다: " + e.getMessage())
                     .build();
-
             return ResponseEntity.internalServerError().body(errorResponse);
         }
     }

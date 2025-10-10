@@ -14,6 +14,7 @@ import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
+import java.util.Comparator;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -192,39 +193,46 @@ public class SmartMidpointService {
 
     private MidpointResponse calculateAndRecommend(List<String> locations, String purpose, String preferences) {
         try {
-            log.info("Calculating midpoint for: {}", locations);
-            MidpointResponse basicMidpoint = midpointService.findMidpoint(locations);
-            if (!basicMidpoint.isSuccess()) return basicMidpoint;
+            log.info("Smart recommendation process started for locations: {}", locations);
 
-            //  MidpointService의 새 메서드를 호출하여 '후보 목록 전체'를 가져옴
-            List<GooglePlace> candidates = midpointService.getNearbyPlaces(basicMidpoint.getMidpointCoordinates());
+            Coordinates geometricMidpoint = midpointService.calculateGeometricMidpoint(locations);
+            log.info("Calculated geometric midpoint: {}", geometricMidpoint);
+
+            List<GooglePlace> candidates = midpointService.getNearbyPlaces(geometricMidpoint, preferences);
+
+            GooglePlace bestPlace = candidates.stream()
+                .max(Comparator.comparing(GooglePlace::getRating))
+                .orElse(candidates.get(0));
+
+            Coordinates finalCoordinates = new Coordinates(
+                    bestPlace.getGeometry().getLocation().getLat(),
+                    bestPlace.getGeometry().getLocation().getLng()
+            );
+            String finalAddress = bestPlace.getName() + " (" + bestPlace.getVicinity() + ")";
 
             String aiRecommendation = generateAIRecommendation(
                 locations,
-                basicMidpoint, // MidpointResponse 객체 전체를 넘김
+                finalAddress,
                 purpose,
                 preferences,
-                candidates // 후보 목록 전체를 넘겨줌
+                candidates
             );
 
             return MidpointResponse.builder()
-                    .midpointCoordinates(basicMidpoint.getMidpointCoordinates())
-                    .midpointAddress(basicMidpoint.getMidpointAddress())
+                    .midpointCoordinates(finalCoordinates)
+                    .midpointAddress(finalAddress)
                     .success(true)
                     .message(aiRecommendation)
                     .build();
+
+        } catch (LocationNotFoundException e) {
+            log.error("Could not find locations during smart recommendation: {}", e.getMessage());
+            return MidpointResponse.builder().success(false).message(e.getMessage()).build();
         } catch (Exception e) {
             log.error("Error in calculateAndRecommend: {}", e.getMessage(), e);
-            MidpointResponse fallback = MidpointResponse.builder().success(false).message("AI 추천 중 오류가 발생했습니다.").build();
-            try {
-                fallback = midpointService.findMidpoint(locations);
-                if (fallback.isSuccess()) {
-                    fallback.setMessage("기본 중간위치: " + fallback.getMidpointAddress() + "\n\n(AI 추천 기능은 일시적으로 사용할 수 없습니다)");
-                }
-            } catch (Exception fallbackEx) {
-                log.error("Error getting fallback midpoint: {}", fallbackEx.getMessage());
-            }
-            return fallback;
+            // [수정] 예외 발생 시의 fallback 로직을 단순화.
+            // 이제 findMidpoint를 호출하지 않고, 간단한 에러 메시지만 반환.
+            return MidpointResponse.builder().success(false).message("AI 추천 생성 중 오류가 발생했습니다.").build();
         }
     }
 
@@ -249,33 +257,31 @@ public class SmartMidpointService {
 
     private String generateAIRecommendation(
             List<String> locations,
-            MidpointResponse midpoint,
+            String finalMidpointAddress, // 이제 MidpointResponse 객체 대신 주소 문자열만 받음
             String purpose,
             String preferences,
-            List<GooglePlace> candidates // 후보 목록을 직접 받음
-    ) {
-        // 후보 목록을 프롬프트에 넣기 좋은 문자열 형태로 가공
+            List<GooglePlace> candidates) {
+
+        // ... (내부 프롬프트 로직은 이전과 동일) ...
         StringBuilder candidatesText = new StringBuilder();
         for (int i = 0; i < candidates.size(); i++) {
             GooglePlace place = candidates.get(i);
             candidatesText.append(String.format("%d. 이름: %s, 주소: %s, 평점: %.1f\n",
                     i + 1, place.getName(), place.getVicinity(), place.getRating()));
         }
-
         try {
             String systemPrompt = String.format("""
                 당신은 주어진 장소 목록 내에서만 답변해야 하는 "장소 추천 AI"입니다. 당신의 지식을 사용하지 마세요.
 
                 [입력 정보]
                 - 참석자들의 출발 위치: %s
-                - 계산된 중간 지점: %s
+                - 대표 중간 지점: %s
                 - 만남의 목적: "%s"
                 - 선호하는 장소 유형: "%s"
 
                 [!!! 가장 중요한 규칙 !!!]
                 - **반드시** 아래 제공된 "장소 후보 목록" **안에서만** 3곳을 골라 추천해야 합니다.
                 - 목록에 없는 장소는 **절대로** 지어내거나 언급해서는 안 됩니다.
-                - 만약 목록에 있는 장소가 목적/선호도와 맞지 않더라도, 그 중에서 가장 나은 선택지를 골라 설명해야 합니다.
 
                 [장소 후보 목록]
                 %s
@@ -283,7 +289,6 @@ public class SmartMidpointService {
                 [지시 사항]
                 1. 위 '장소 후보 목록'을 분석하여, '만남의 목적'과 '선호하는 장소 유형'에 가장 적합한 장소 3곳을 선정하세요.
                 2. 각 장소에 대해 "추천 이유"를 반드시 포함하여 설명하고, "이름", "주소", "평점" 정보를 정확히 기재하세요.
-                3. 답변 형식은 아래 예시를 반드시 지켜주세요. 인사나 불필요한 말은 절대 금지합니다.
 
                 [답변 예시]
                 1. **[장소 이름]**
@@ -292,30 +297,22 @@ public class SmartMidpointService {
                    - 추천 이유: [목적과 선호도를 반영하여, 왜 이 목록에서 이 장소를 골랐는지 설명]
                 """,
                 String.join(", ", locations),
-                midpoint.getMidpointAddress(),
+                finalMidpointAddress,
                 purpose,
                 preferences,
-                candidatesText.toString() // 가공된 후보 목록 문자열 주입
+                candidatesText.toString()
             );
-
-            ChatCompletionRequest request = ChatCompletionRequest.builder()
-                    .model(gpt4Model)
-                    .messages(List.of(new ChatMessage("system", systemPrompt)))
-                    .maxTokens(maxTokens)
-                    .temperature(temperature)
-                    .build();
-
+            ChatCompletionRequest request = ChatCompletionRequest.builder().model(gpt4Model).messages(List.of(new ChatMessage("system", systemPrompt))).maxTokens(maxTokens).temperature(temperature).build();
             ChatCompletionResult result = gpt4Service.createChatCompletion(request);
             log.debug("GPT-4 recommendation generated successfully based on provided list.");
             return result.getChoices().get(0).getMessage().getContent();
-
         } catch (Exception e) {
             log.error("Error generating AI recommendation: {}", e.getMessage(), e);
-            return String.format("AI 추천 생성에 실패했습니다. 계산된 중간 지점은 '%s' 입니다.", midpoint.getMidpointAddress());
+            return String.format("AI 추천 생성에 실패했습니다. 계산된 중간 지점은 '%s' 입니다.", finalMidpointAddress);
         }
     }
 
-    private MidpointResponse resetAndStartOver(Long userId) {
+    public MidpointResponse resetAndStartOver(Long userId) {
         userSessions.remove(userId);
         return handleInitialRequest(userId, new MidpointSession());
     }
@@ -330,7 +327,7 @@ public class SmartMidpointService {
         private List<String> collectedLocations = new ArrayList<>();
         private String purpose;
         private String preferences;
-        
+
         // Getters and Setters
         public SessionState getState() { return state; }
         public void setState(SessionState state) { this.state = state; }
