@@ -16,7 +16,7 @@ public class FCMService {
     // 단일 기기에 메시지 전송
     public String sendMessageToToken(String token, String title, String body, Map<String, String> data) {
         try {
-            // [수정] title과 body를 data 맵에 직접 추가
+            // title과 body를 data 맵에 직접 추가
             Map<String, String> fullData = new HashMap<>(data);
             fullData.put("title", title);
             fullData.put("body", body);

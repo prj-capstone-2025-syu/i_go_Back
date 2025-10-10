@@ -1,0 +1,532 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>스마트 중간위치 찾기 테스트</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background: white;
+            border-radius: 10px;
+            padding: 30px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .test-section {
+            margin-bottom: 30px;
+            padding: 20px;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            background-color: #fafafa;
+        }
+        .test-section h2 {
+            color: #2c3e50;
+            margin-top: 0;
+        }
+        .input-group {
+            margin-bottom: 15px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+            color: #555;
+        }
+        input, textarea {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            font-size: 14px;
+        }
+        textarea {
+            resize: vertical;
+            min-height: 80px;
+        }
+        button {
+            background-color: #3498db;
+            color: white;
+            padding: 12px 24px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+            margin-right: 10px;
+            margin-bottom: 10px;
+        }
+        button:hover {
+            background-color: #2980b9;
+        }
+        .reset-btn {
+            background-color: #e74c3c;
+        }
+        .reset-btn:hover {
+            background-color: #c0392b;
+        }
+        .response-area {
+            margin-top: 20px;
+            padding: 15px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            background-color: white;
+            min-height: 100px;
+            white-space: pre-wrap;
+        }
+        .success {
+            border-left: 4px solid #27ae60;
+            background-color: #d5f4e6;
+        }
+        .error {
+            border-left: 4px solid #e74c3c;
+            background-color: #fdf2f2;
+        }
+        .chat-history {
+            max-height: 400px;
+            overflow-y: auto;
+            border: 1px solid #ddd;
+            padding: 15px;
+            background-color: white;
+            border-radius: 5px;
+        }
+        .message {
+            margin-bottom: 10px;
+            padding: 8px 12px;
+            border-radius: 5px;
+        }
+        .user-message {
+            background-color: #e3f2fd;
+            text-align: right;
+        }
+        .bot-message {
+            background-color: #f1f8e9;
+        }
+        .example-buttons {
+            margin: 10px 0;
+        }
+        .example-btn {
+            background-color: #95a5a6;
+            font-size: 12px;
+            padding: 6px 12px;
+        }
+        .example-btn:hover {
+            background-color: #7f8c8d;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🗺️ 스마트 중간위치 찾기 테스트</h1>
+
+        <!-- 기본 중간위치 계산 -->
+        <div class="test-section">
+            <h2>1. 기본 중간위치 계산</h2>
+            <div class="input-group">
+                <label for="locations">위치 목록 (쉼표로 구분):</label>
+                <input type="text" id="locations" placeholder="예: 강남역, 홍대입구역, 신림역"
+                       value="강남역, 홍대입구역, 신림역">
+            </div>
+            <button onclick="findBasicMidpoint()">기본 중간위치 찾기</button>
+            <div id="basicResult" class="response-area"></div>
+        </div>
+
+        <!-- 스마트 중간위치 찾기 (MVP 플로우) -->
+        <div class="test-section">
+            <h2>2. 스마트 중간위치 찾기 (AI 대화형)</h2>
+            <p>MVP 플로우: 인원수 → 위치 수집 → GPT-4 추천</p>
+
+            <div class="input-group">
+                <label for="smartMessage">메시지:</label>
+                <textarea id="smartMessage" placeholder="예: 중간 장소 찾아줘"></textarea>
+            </div>
+
+            <div class="example-buttons">
+                <button class="example-btn" onclick="setExampleMessage('중간 장소 찾아줘')">시작하기</button>
+                <button class="example-btn" onclick="setExampleMessage('3명')">3명</button>
+                <button class="example-btn" onclick="setExampleMessage('강남역, 홍대, 신림역')">위치 입력</button>
+            </div>
+
+            <button onclick="findSmartMidpoint()">스마트 중간위치 찾기</button>
+            <button class="reset-btn" onclick="resetSession()">세션 초기화</button>
+
+            <div class="input-group" style="margin-top: 15px;">
+                <label>대화 히스토리:</label>
+                <div id="chatHistory" class="chat-history"></div>
+            </div>
+        </div>
+
+        <!-- 추가 옵션 테스트 -->
+        <div class="test-section">
+            <h2>3. 고급 옵션 테스트</h2>
+            <div class="input-group">
+                <label for="purpose">만남 목적:</label>
+                <input type="text" id="purpose" placeholder="예: 회의, 식사, 놀기">
+            </div>
+            <div class="input-group">
+                <label for="preferences">장소 선호도:</label>
+                <input type="text" id="preferences" placeholder="예: 카페, 식당, 지하철역 근처">
+            </div>
+            <button onclick="findSmartMidpointWithOptions()">옵션 포함 스마트 찾기</button>
+            <div id="advancedResult" class="response-area"></div>
+        </div>
+
+        <!-- 지역별 테스트 -->
+        <div class="test-section">
+            <h2>4. 지역별 Geocoding 테스트</h2>
+            <p>Google Geocoding API의 한국/해외 위치 인식 테스트</p>
+
+            <div class="input-group">
+                <label>한국 위치 테스트:</label>
+                <div class="example-buttons">
+                    <button class="example-btn" onclick="testSingleLocation('서울역')">서울역</button>
+                    <button class="example-btn" onclick="testSingleLocation('강남역')">강남역</button>
+                    <button class="example-btn" onclick="testSingleLocation('홍대입구역')">홍대입구역</button>
+                    <button class="example-btn" onclick="testSingleLocation('부산역')">부산역</button>
+                    <button class="example-btn" onclick="testSingleLocation('제주공항')">제주공항</button>
+                </div>
+            </div>
+
+            <div class="input-group">
+                <label>해외 위치 테스트:</label>
+                <div class="example-buttons">
+                    <button class="example-btn" onclick="testSingleLocation('Times Square, New York')">Times Square</button>
+                    <button class="example-btn" onclick="testSingleLocation('Eiffel Tower, Paris')">Eiffel Tower</button>
+                    <button class="example-btn" onclick="testSingleLocation('Tokyo Station')">Tokyo Station</button>
+                    <button class="example-btn" onclick="testSingleLocation('Big Ben, London')">Big Ben</button>
+                </div>
+            </div>
+
+            <div class="input-group">
+                <label for="customLocation">직접 입력:</label>
+                <input type="text" id="customLocation" placeholder="테스트할 위치를 입력하세요">
+                <button onclick="testCustomLocation()">단일 위치 테스트</button>
+            </div>
+
+            <div id="locationTestResult" class="response-area"></div>
+        </div>
+
+        <!-- API 상태 확인 -->
+        <div class="test-section">
+            <h2>5. API 상태 및 할당량 확인</h2>
+            <button onclick="checkAPIStatus()">Google Maps API 상태 확인</button>
+            <button onclick="testMultipleLocations()">다중 위치 동시 테스트</button>
+            <div id="apiStatusResult" class="response-area"></div>
+        </div>
+    </div>
+
+    <script>
+        let chatHistory = [];
+
+        // 기본 중간위치 찾기
+        async function findBasicMidpoint() {
+            const locations = document.getElementById('locations').value.split(',').map(loc => loc.trim());
+            const resultDiv = document.getElementById('basicResult');
+
+            if (locations.length < 2) {
+                showResult(resultDiv, '최소 2개 이상의 위치를 입력해주세요.', false);
+                return;
+            }
+
+            try {
+                const response = await fetch('/api/midpoint/find', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        locations: locations
+                    })
+                });
+
+                const data = await response.json();
+                showResult(resultDiv, JSON.stringify(data, null, 2), response.ok);
+            } catch (error) {
+                showResult(resultDiv, '오류: ' + error.message, false);
+            }
+        }
+
+        // 스마트 중간위치 찾기
+        async function findSmartMidpoint() {
+            const message = document.getElementById('smartMessage').value;
+
+            if (!message.trim()) {
+                alert('메시지를 입력해주세요.');
+                return;
+            }
+
+            try {
+                const response = await fetch('/api/midpoint/smart', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        message: message
+                    })
+                });
+
+                const data = await response.json();
+
+                // 대화 히스토리에 추가
+                addToChatHistory('user', message);
+                addToChatHistory('bot', data.message || JSON.stringify(data, null, 2));
+
+                // 메시지 입력란 초기화
+                document.getElementById('smartMessage').value = '';
+
+            } catch (error) {
+                addToChatHistory('bot', '오류: ' + error.message);
+            }
+        }
+
+        // 옵션 포함 스마트 중간위치 찾기
+        async function findSmartMidpointWithOptions() {
+            const message = document.getElementById('smartMessage').value;
+            const purpose = document.getElementById('purpose').value;
+            const preferences = document.getElementById('preferences').value;
+            const resultDiv = document.getElementById('advancedResult');
+
+            const requestBody = {
+                message: message || '중간 장소 찾아줘'
+            };
+
+            if (purpose) requestBody.purpose = purpose;
+            if (preferences) requestBody.preferences = preferences;
+
+            try {
+                const response = await fetch('/api/midpoint/smart', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify(requestBody)
+                });
+
+                const data = await response.json();
+                showResult(resultDiv, JSON.stringify(data, null, 2), response.ok);
+            } catch (error) {
+                showResult(resultDiv, '오류: ' + error.message, false);
+            }
+        }
+
+        // 세션 초기화
+        async function resetSession() {
+            try {
+                const response = await fetch('/api/midpoint/reset', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    }
+                });
+
+                const data = await response.json();
+
+                // 대화 히스토리 초기화
+                chatHistory = [];
+                updateChatHistory();
+
+                // 새로운 세션 시작 메시지 추가
+                addToChatHistory('bot', data.message || '세션이 초기화되었습니다.');
+
+            } catch (error) {
+                addToChatHistory('bot', '세션 초기화 오류: ' + error.message);
+            }
+        }
+
+        // 예시 메시지 설정
+        function setExampleMessage(message) {
+            document.getElementById('smartMessage').value = message;
+        }
+
+        // 대화 히스토리에 추가
+        function addToChatHistory(sender, message) {
+            chatHistory.push({ sender, message, timestamp: new Date() });
+            updateChatHistory();
+        }
+
+        // 대화 히스토리 업데이트
+        function updateChatHistory() {
+            const chatDiv = document.getElementById('chatHistory');
+            chatDiv.innerHTML = '';
+
+            chatHistory.forEach(chat => {
+                const messageDiv = document.createElement('div');
+                messageDiv.className = `message ${chat.sender}-message`;
+
+                const timestamp = chat.timestamp.toLocaleTimeString();
+                const senderLabel = chat.sender === 'user' ? '👤 사용자' : '🤖 AI';
+
+                messageDiv.innerHTML = `
+                    <strong>${senderLabel}</strong> <small>(${timestamp})</small><br>
+                    ${chat.message}
+                `;
+
+                chatDiv.appendChild(messageDiv);
+            });
+
+            // 스크롤을 맨 아래로
+            chatDiv.scrollTop = chatDiv.scrollHeight;
+        }
+
+        // 결과 표시
+        function showResult(element, result, isSuccess) {
+            element.textContent = result;
+            element.className = 'response-area ' + (isSuccess ? 'success' : 'error');
+        }
+
+        // 단일 위치 테스트
+        async function testSingleLocation(locationName) {
+            const resultDiv = document.getElementById('locationTestResult');
+            showResult(resultDiv, `테스트 중: ${locationName}...`, true);
+
+            try {
+                const response = await fetch('/api/midpoint/find', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        locations: [locationName, locationName] // 더미로 2개 위치 (최소 요구사항)
+                    })
+                });
+
+                const data = await response.json();
+
+                let resultText = `=== ${locationName} 테스트 결과 ===\n`;
+                resultText += `성공: ${data.success}\n`;
+                resultText += `메시지: ${data.message}\n`;
+
+                if (data.success && data.midpointCoordinates) {
+                    resultText += `좌표: ${data.midpointCoordinates.lat}, ${data.midpointCoordinates.lng}\n`;
+                    resultText += `주소: ${data.midpointAddress}\n`;
+                }
+
+                showResult(resultDiv, resultText, data.success);
+            } catch (error) {
+                showResult(resultDiv, `오류: ${error.message}`, false);
+            }
+        }
+
+        // 커스텀 위치 테스트
+        function testCustomLocation() {
+            const location = document.getElementById('customLocation').value;
+            if (!location.trim()) {
+                alert('위치를 입력해주세요.');
+                return;
+            }
+            testSingleLocation(location);
+        }
+
+        // API 상태 확인
+        async function checkAPIStatus() {
+            const resultDiv = document.getElementById('apiStatusResult');
+            showResult(resultDiv, 'API 상태 확인 중...', true);
+
+            const testLocations = [
+                'Seoul Station',
+                '서울역',
+                'New York',
+                'Tokyo',
+                '부산역'
+            ];
+
+            let results = '=== Google Maps API 상태 확인 ===\n\n';
+
+            for (let location of testLocations) {
+                try {
+                    const response = await fetch('/api/midpoint/find', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({
+                            locations: [location, location]
+                        })
+                    });
+
+                    const data = await response.json();
+                    results += `${location}: ${data.success ? '✅ 성공' : '❌ 실패'}\n`;
+                    if (!data.success) {
+                        results += `  오류: ${data.message}\n`;
+                    }
+                } catch (error) {
+                    results += `${location}: ❌ 네트워크 오류\n`;
+                }
+
+                // 잠시 대기 (API 제한 방지)
+                await new Promise(resolve => setTimeout(resolve, 500));
+            }
+
+            showResult(resultDiv, results, true);
+        }
+
+        // 다중 위치 동시 테스트
+        async function testMultipleLocations() {
+            const resultDiv = document.getElementById('apiStatusResult');
+            showResult(resultDiv, '다중 위치 테스트 중...', true);
+
+            const koreanLocations = ['서울역', '부산역', '대구역'];
+            const internationalLocations = ['Tokyo Station', 'Beijing Station', 'New York Penn Station'];
+
+            let results = '=== 다중 위치 동시 테스트 ===\n\n';
+
+            // 한국 위치 테스트
+            try {
+                results += '한국 위치 테스트:\n';
+                const koreanResponse = await fetch('/api/midpoint/find', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        locations: koreanLocations
+                    })
+                });
+
+                const koreanData = await koreanResponse.json();
+                results += `결과: ${koreanData.success ? '✅ 성공' : '❌ 실패'}\n`;
+                results += `메시지: ${koreanData.message}\n\n`;
+            } catch (error) {
+                results += `한국 위치 테스트: ❌ 오류 - ${error.message}\n\n`;
+            }
+
+            // 해외 위치 테스트
+            try {
+                results += '해외 위치 테스트:\n';
+                const intlResponse = await fetch('/api/midpoint/find', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        locations: internationalLocations
+                    })
+                });
+
+                const intlData = await intlResponse.json();
+                results += `결과: ${intlData.success ? '✅ 성공' : '❌ 실패'}\n`;
+                results += `메시지: ${intlData.message}\n`;
+            } catch (error) {
+                results += `해외 위치 테스트: ❌ 오류 - ${error.message}\n`;
+            }
+
+            showResult(resultDiv, results, true);
+        }
+
+        // 페이지 로드 시 초기화
+        document.addEventListener('DOMContentLoaded', function() {
+            addToChatHistory('bot', '안녕하세요! 스마트 중간위치 찾기 서비스입니다. "중간 장소 찾아줘"라고 말씀해보세요! 🗺️');
+        });
+    </script>
+</body>
+</html>

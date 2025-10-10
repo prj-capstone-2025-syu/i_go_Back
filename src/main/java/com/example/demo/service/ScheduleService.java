@@ -229,9 +229,11 @@ public class ScheduleService {
     }
 
     public Schedule createSchedule(Long userId, String title, LocalDateTime startTime,
-                                   LocalDateTime endTime, String location, String memo, String category, String supplies) { // supplies 파라미터 추가
-        // Log the received memo value
-        log.info("ScheduleService.createSchedule called with memo: '{}'", memo);
+                                   LocalDateTime endTime, String startLocation, String location, String memo,
+                                   String category, String supplies, Double startX, Double startY,
+                                   Double destinationX, Double destinationY) {
+        log.info("ScheduleService.createSchedule called with startLocation: '{}', location: '{}', memo: '{}'",
+                startLocation, location, memo);
 
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new IllegalArgumentException("사용자를 찾을 수 없습니다. ID: " + userId));
@@ -244,11 +246,16 @@ public class ScheduleService {
                 .title(title)
                 .startTime(startTime)
                 .endTime(endTime)
+                .startLocation(startLocation)
+                .startX(startX)
+                .startY(startY)
                 .location(location)
-                .memo(memo) // memo 설정
+                .destinationX(destinationX)
+                .destinationY(destinationY)
+                .memo(memo)
                 .category(Category.valueOf(category.toUpperCase()))
                 .user(user)
-                .supplies(supplies) // supplies 설정
+                .supplies(supplies)
                 .status(Schedule.ScheduleStatus.PENDING)
                 .build();
 
@@ -317,10 +324,27 @@ public class ScheduleService {
 
     //Function_Call
     public Schedule createScheduleByArgs(Long userId, Map<String, Object> args) {
-        log.info("ScheduleService.createScheduleByArgs received args: {}", args); // Log the received arguments map
+        log.info("ScheduleService.createScheduleByArgs received args: {}", args);
         String title = (String) args.get("title");
         String datetime = (String) args.get("datetime");
-        String location = (String) args.get("location");
+        String locationInfo = (String) args.get("location");
+
+        // location 필드 처리 - "출발지에서 도착지" 형태를 분리
+        String startLocation = null;
+        String location = null;
+
+        if (locationInfo != null && !locationInfo.trim().isEmpty()) {
+            String[] locations = parseLocationInfo(locationInfo);
+            if (locations.length == 2) {
+                startLocation = locations[0]; // 출발지
+                location = locations[1];      // 도착지
+                log.info("Parsed locations - Start: {}, Destination: {}", startLocation, location);
+            } else {
+                // 분리되지 않으면 전체를 도착지로 처리
+                location = locationInfo;
+                log.info("Single location used as destination: {}", location);
+            }
+        }
 
         String memo = "";
         Object memoVal = args.get("memo");
@@ -348,8 +372,8 @@ public class ScheduleService {
             supplies = (String) suppliesVal;
         } else if (suppliesVal instanceof List) {
             try {
-                List<?> list = (List<?>) suppliesVal;
-                supplies = list.stream().map(Object::toString).collect(Collectors.joining(", "));
+                List<?> suppliesList = (List<?>) suppliesVal;
+                supplies = suppliesList.stream().map(Object::toString).collect(Collectors.joining(", "));
                 if (!supplies.isEmpty()) log.info("Used 'supplies' (List) field. Supplies value: '{}'", supplies);
             } catch (Exception e) { log.warn("Error processing 'supplies' as List: {}", e.getMessage()); }
         }
@@ -358,11 +382,11 @@ public class ScheduleService {
             Object itemsVal = args.get("items");
             if (itemsVal instanceof String && !((String) itemsVal).isEmpty()) {
                 supplies = (String) itemsVal;
-                if (!supplies.isEmpty()) log.info("Used 'items' (String) field for supplies. Supplies value: '{}'", supplies);
+                log.info("Used 'items' (String) field for supplies. Supplies value: '{}'", supplies);
             } else if (itemsVal instanceof List) {
                 try {
-                    List<?> list = (List<?>) itemsVal;
-                    supplies = list.stream().map(Object::toString).collect(Collectors.joining(", "));
+                    List<?> itemsList = (List<?>) itemsVal;
+                    supplies = itemsList.stream().map(Object::toString).collect(Collectors.joining(", "));
                     if (!supplies.isEmpty()) log.info("Used 'items' (List) field for supplies. Supplies value: '{}'", supplies);
                 } catch (Exception e) { log.warn("Error processing 'items' as List: {}", e.getMessage()); }
             }
@@ -372,7 +396,53 @@ public class ScheduleService {
         LocalDateTime startTime = LocalDateTime.parse(datetime, formatter);
         LocalDateTime endTime = startTime.plusHours(1); // 기본 1시간
 
-        return createSchedule(userId, title, startTime, endTime, location, memo, category, supplies); // supplies 전달
+        // 좌표값 처리
+        Double startX = args.get("startX") instanceof Number ? ((Number) args.get("startX")).doubleValue() : 0.0;
+        Double startY = args.get("startY") instanceof Number ? ((Number) args.get("startY")).doubleValue() : 0.0;
+        Double destinationX = args.get("destinationX") instanceof Number ? ((Number) args.get("destinationX")).doubleValue() : 0.0;
+        Double destinationY = args.get("destinationY") instanceof Number ? ((Number) args.get("destinationY")).doubleValue() : 0.0;
+
+        return createSchedule(userId, title, startTime, endTime, startLocation, location, memo, category, supplies,
+                startX, startY, destinationX, destinationY);
+    }
+
+    /**
+     * "출발지에서 도착지" 형태의 문자열을 파싱하여 [출발지, 도착지] 배열로 반환
+     */
+    private String[] parseLocationInfo(String locationInfo) {
+        if (locationInfo == null || locationInfo.trim().isEmpty()) {
+            return new String[0];
+        }
+
+        String trimmed = locationInfo.trim();
+
+        // "에서" 패턴으로 분리
+        if (trimmed.contains("에서")) {
+            String[] parts = trimmed.split("에서", 2);
+            if (parts.length == 2) {
+                String startLocation = parts[0].trim();
+                String endLocation = parts[1].trim();
+
+                // "로" 또는 "으로" 제거
+                endLocation = endLocation.replaceAll("(으)?로$", "").trim();
+
+                return new String[]{startLocation, endLocation};
+            }
+        }
+
+        // "에서" 패턴이 없으면 다른 패턴들도 시도
+        String[] separators = {"→", "->", "~", " to ", " - "};
+        for (String separator : separators) {
+            if (trimmed.contains(separator)) {
+                String[] parts = trimmed.split(separator, 2);
+                if (parts.length == 2) {
+                    return new String[]{parts[0].trim(), parts[1].trim()};
+                }
+            }
+        }
+
+        // 분리할 수 없으면 빈 배열 반환
+        return new String[0];
     }
 
     //Function_Call
@@ -417,13 +487,28 @@ public class ScheduleService {
     public Schedule updateScheduleByArgs(Long userId, Map<String, Object> args) {
         String title = (String) args.get("title");
         String datetime = (String) args.get("datetime");
-        String location = (String) args.get("location");
+        String locationInfo = (String) args.get("location");
         String memo = (String) args.get("memo");
         String category = (String) args.getOrDefault("category", "PERSONAL");
 
         DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm");
         LocalDateTime startTime = LocalDateTime.parse(datetime, formatter);
         LocalDateTime endTime = startTime.plusHours(1); // 기본 1시간
+
+        // location 필드 처리 - "출발지에서 도착지" 형태를 분리
+        String startLocation = null;
+        String location = null;
+        
+        if (locationInfo != null && !locationInfo.trim().isEmpty()) {
+            String[] locations = parseLocationInfo(locationInfo);
+            if (locations.length == 2) {
+                startLocation = locations[0]; // 출발지
+                location = locations[1];      // 도착지
+            } else {
+                // 분리되지 않으면 전체를 도착지로 처리
+                location = locationInfo;
+            }
+        }
 
         // 기존 일정 찾기
         List<Schedule> candidates = findSchedulesByTitleAndTime(userId, title, startTime);
@@ -439,10 +524,10 @@ public class ScheduleService {
             title,
             startTime,
             endTime,
-            "", // startLocation
+            startLocation, // 출발지
             0.0, // startX
             0.0, // startY
-            location,
+            location, // 도착지
             0.0, // destinationX
             0.0, // destinationY
             memo,
@@ -452,7 +537,7 @@ public class ScheduleService {
     }
 
     /**
-     * 날씨 업데이�� 대상 활성 스케줄 조회 (진행 중이거나 24시간 이내 시작 예정)
+     * 날씨 업데이트 대상 활성 스케줄 조회 (진행 중이거나 24시간 이내 시작 예정)
      */
     @Transactional(readOnly = true)
     public List<Schedule> getActiveSchedulesForWeatherUpdate(LocalDateTime now) {
