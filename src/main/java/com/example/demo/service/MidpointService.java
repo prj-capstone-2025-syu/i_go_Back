@@ -2,8 +2,12 @@ package com.example.demo.service;
 
 import com.example.demo.dto.midpoint.*;
 import com.example.demo.exception.LocationNotFoundException;
+import com.theokanning.openai.completion.chat.ChatCompletionRequest;
+import com.theokanning.openai.completion.chat.ChatMessage;
+import com.theokanning.openai.service.OpenAiService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.HttpClientErrorException;
@@ -23,6 +27,10 @@ import java.util.List;
 public class MidpointService {
 
     private final RestTemplate restTemplate;
+
+    @Qualifier("gpt5NanoService")
+    private final OpenAiService gpt5NanoService;
+
     @Value("${google.maps.api.key}")
     private String googleMapsApiKey;
     private static final String GEOCODING_API_URL = "https://maps.googleapis.com/maps/api/geocode/json";
@@ -43,11 +51,10 @@ public class MidpointService {
     // 이 메서드는 '선호도'를 인자로 받아서 동적으로 검색 타입을 결정함
     public List<GooglePlace> getNearbyPlaces(Coordinates coords, String preferences) {
         String searchType = mapPreferenceToApiType(preferences);
-        log.info("User preference '{}' mapped to Google API type '{}'", preferences, searchType);
+        log.info("User preference '{}' classified to Google API type '{}' by LLM", preferences, searchType);
 
-        List<GooglePlace> places = searchNearbyPlaces(coords, searchType, 1000); // 반경을 1km로 통일
+        List<GooglePlace> places = searchNearbyPlaces(coords, searchType, 1000);
 
-        // 만약 결과가 없으면, 가장 기본적인 'point_of_interest'로 한번 더 검색
         if (places.isEmpty()) {
             log.warn("No results for type '{}', falling back to 'point_of_interest'", searchType);
             places = searchNearbyPlaces(coords, "point_of_interest", 1500);
@@ -68,23 +75,53 @@ public class MidpointService {
         return places;
     }
 
-    // 사용자 입력을 Google API 타입으로 변환하는 헬퍼 메서드
     private String mapPreferenceToApiType(String preference) {
-        if (preference == null) return "point_of_interest";
-        String lowerPref = preference.toLowerCase();
+        if (preference == null || preference.isBlank()) return "point_of_interest";
 
-        if (lowerPref.contains("지하철") || lowerPref.contains("역")) {
-            return "subway_station";
-        } else if (lowerPref.contains("식당") || lowerPref.contains("맛집") || lowerPref.contains("밥")) {
-            return "restaurant";
-        } else if (lowerPref.contains("카페") || lowerPref.contains("커피")) {
-            return "cafe";
-        } else if (lowerPref.contains("공원")) {
-            return "park";
-        } else if (lowerPref.contains("술집") || lowerPref.contains("호프")) {
-            return "bar";
+        String prompt = String.format("""
+            사용자의 장소 선호도 문장을 분석하여, 아래 주어진 Google Places API 타입 중 가장 적합한 것 하나만 골라서 응답해.
+            오직 주어진 타입 단어 하나만 응답해야 하며, 다른 설명은 절대 추가하지 마.
+
+            [사용자 선호도]
+            "%s"
+
+            [Google Places API 타입 목록]
+            - subway_station, restaurant, cafe, park, bar, point_of_interest
+            """, preference);
+
+        try {
+            ChatCompletionRequest request = ChatCompletionRequest.builder()
+                    .model("gpt-4o-mini") // [수정] 경량 모델 이름 지정 (네이밍은 너의 설정에 맞게)
+                    .messages(List.of(new ChatMessage("system", prompt)))
+                    .maxTokens(10)
+                    .temperature(0.0)
+                    .build();
+
+            // [수정] 주입받은 gpt5NanoService를 사용
+            String result = gpt5NanoService.createChatCompletion(request)
+                                         .getChoices().get(0).getMessage().getContent()
+                                         .trim().toLowerCase();
+
+            List<String> validTypes = List.of("subway_station", "restaurant", "cafe", "park", "bar", "point_of_interest");
+            if (validTypes.contains(result)) {
+                return result;
+            }
+            log.warn("LLM classification result '{}' is not a valid type. Falling back to default.", result);
+            return "point_of_interest";
+
+        } catch (Exception e) {
+            log.error("Error during LLM preference classification: {}. Falling back to keyword matching.", e.getMessage());
+            return mapPreferenceByKeyword(preference);
         }
-        // 매칭되는게 없으면 일반적인 검색
+    }
+
+    private String mapPreferenceByKeyword(String preference) {
+        String lowerPref = preference.toLowerCase();
+        if (lowerPref.contains("지하철") || lowerPref.contains("역")) return "subway_station";
+        if (lowerPref.contains("식당") || lowerPref.contains("맛집") || lowerPref.contains("밥")) return "restaurant";
+        if (lowerPref.contains("카페") || lowerPref.contains("커피")) return "cafe";
+        if (lowerPref.contains("공원")) return "park";
+        if (lowerPref.contains("술집") || lowerPref.contains("호프")) return "bar";
         return "point_of_interest";
     }
 

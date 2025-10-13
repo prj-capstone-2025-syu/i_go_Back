@@ -85,15 +85,15 @@ public class ChatService {
             // 시스템 프롬프트 추가 (파인튜닝 모델에 맞는 프롬프트)
             if (messages.isEmpty()) {
                 String systemPrompt = String.format(
-                    "당신은 IGO 앱의 일정 관리 도우미입니다. 현재 시간은 %s입니다.\n" +
-                    "사용자의 요청을 분석하여 다음 형식으로 응답해주세요:\n" +
-                    "INTENT: [CREATE_SCHEDULE|QUERY_SCHEDULE|DELETE_SCHEDULE|FIND_MIDPOINT|GENERAL]\n" +
-                    "SLOTS: {\"title\": \"값\", \"datetime\": \"yyyy-MM-ddTHH:mm\", \"location\": \"값\", \"memo\": \"값\", \"supplies\": \"값\", \"locations\": [\"위치1\", \"위치2\"], \"purpose\": \"값\"}\n" +
-                    "RESPONSE: 사용자에게 보여줄 자연어 응답\n\n" +
-                    "일정 생성, 조회, 삭제와 관련된 요청이 아니면 INTENT를 GENERAL로 설정하고 자연스러운 대화를 해주세요.\n" +
-                    "중간위치나 만남 장소 찾기 요청이면 INTENT를 FIND_MIDPOINT로 설정해주세요.\n" +
-                    "'내일', '모레', '다음주' 등의 상대적 시간은 현재 시간을 기준으로 절대 시간으로 변환해주세요.",
-                    currentTime.format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm"))
+                        "당신은 IGO 앱의 일정 관리 도우미입니다. 현재 시간은 %s입니다.\n" +
+                                "사용자의 요청을 분석하여 다음 형식으로 응답해주세요:\n" +
+                                "INTENT: [CREATE_SCHEDULE|QUERY_SCHEDULE|DELETE_SCHEDULE|FIND_MIDPOINT|GENERAL]\n" +
+                                "SLOTS: {\"title\": \"값\", \"datetime\": \"yyyy-MM-ddTHH:mm\", \"location\": \"값\", \"memo\": \"값\", \"supplies\": \"값\", \"locations\": [\"위치1\", \"위치2\"], \"purpose\": \"값\"}\n" +
+                                "RESPONSE: 사용자에게 보여줄 자연어 응답\n\n" +
+                                "일정 생성, 조회, 삭제와 관련된 요청이 아니면 INTENT를 GENERAL로 설정하고 자연스러운 대화를 해주세요.\n" +
+                                "중간위치나 만남 장소 찾기 요청이면 INTENT를 FIND_MIDPOINT로 설정해주세요.\n" +
+                                "'내일', '모레', '다음주' 등의 상대적 시간은 현재 시간을 기준으로 절대 시간으로 변환해주세요.",
+                        currentTime.format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm"))
                 );
                 ChatMessage systemMessage = new ChatMessage("system", systemPrompt);
                 messages.add(systemMessage);
@@ -178,7 +178,7 @@ public class ChatService {
     private boolean isJsonResponse(String response) {
         String trimmed = response.trim();
         return (trimmed.startsWith("{") && trimmed.endsWith("}")) ||
-               (trimmed.contains("\"title\"") && trimmed.contains("\"datetime\""));
+                (trimmed.contains("\"title\"") && trimmed.contains("\"datetime\""));
     }
 
     /**
@@ -274,7 +274,7 @@ public class ChatService {
                     if (locations.length == 2) {
                         String startLocation = locations[0];
                         String destination = locations[1];
-                        
+
                         // 출발지 좌표 변환
                         var startCoords = geocodingService.getCoordinates(startLocation);
                         if (startCoords != null) {
@@ -286,7 +286,7 @@ public class ChatService {
                             log.warn("출발지 좌표 변환 실패: {}", startLocation);
                             scheduleRequest.setStartLocation(startLocation);
                         }
-                        
+
                         // 도착지 좌표 변환
                         var destCoords = geocodingService.getCoordinates(destination);
                         if (destCoords != null) {
@@ -349,21 +349,28 @@ public class ChatService {
                     try {
                         List<?> list = (List<?>) suppliesVal;
                         supplies = list.stream().map(Object::toString).collect(java.util.stream.Collectors.joining(", "));
-                        if (!supplies.isEmpty()) log.debug("ChatService: Used 'supplies' (List) from Exaone slots. Value: '{}'", supplies);
-                    } catch (Exception e) { log.warn("ChatService: Error processing 'supplies' as List from Exaone slots: {}", e.getMessage());}
+                        if (!supplies.isEmpty())
+                            log.debug("ChatService: Used 'supplies' (List) from Exaone slots. Value: '{}'", supplies);
+                    } catch (Exception e) {
+                        log.warn("ChatService: Error processing 'supplies' as List from Exaone slots: {}", e.getMessage());
+                    }
                 }
 
                 if (supplies.isEmpty()) {
                     Object itemsVal = slots.get("items");
                     if (itemsVal instanceof String && !((String) itemsVal).isEmpty()) {
                         supplies = (String) itemsVal;
-                        if (!supplies.isEmpty()) log.debug("ChatService: Used 'items' (String) from Exaone slots for supplies. Value: '{}'", supplies);
+                        if (!supplies.isEmpty())
+                            log.debug("ChatService: Used 'items' (String) from Exaone slots for supplies. Value: '{}'", supplies);
                     } else if (itemsVal instanceof List) {
                         try {
                             List<?> list = (List<?>) itemsVal;
                             supplies = list.stream().map(Object::toString).collect(java.util.stream.Collectors.joining(", "));
-                            if (!supplies.isEmpty()) log.debug("ChatService: Used 'items' (List) from Exaone slots for supplies. Value: '{}'", supplies);
-                        } catch (Exception e) { log.warn("ChatService: Error processing 'items' as List from Exaone slots: {}", e.getMessage());}
+                            if (!supplies.isEmpty())
+                                log.debug("ChatService: Used 'items' (List) from Exaone slots for supplies. Value: '{}'", supplies);
+                        } catch (Exception e) {
+                            log.warn("ChatService: Error processing 'items' as List from Exaone slots: {}", e.getMessage());
+                        }
                     }
                 }
                 scheduleRequest.setSupplies(supplies);
@@ -379,19 +386,19 @@ public class ChatService {
             scheduleRequest.setCategory("PERSONAL"); // 기본값 설정
 
             Schedule schedule = scheduleService.createSchedule(
-                userId,
-                scheduleRequest.getTitle(),
-                scheduleRequest.getStartTime(),
-                scheduleRequest.getEndTime(),
-                scheduleRequest.getStartLocation(),
-                scheduleRequest.getLocation(),
-                scheduleRequest.getMemo(),
-                scheduleRequest.getCategory(),
-                scheduleRequest.getSupplies(),
-                scheduleRequest.getStartX(),
-                scheduleRequest.getStartY(),
-                scheduleRequest.getDestinationX(),
-                scheduleRequest.getDestinationY()
+                    userId,
+                    scheduleRequest.getTitle(),
+                    scheduleRequest.getStartTime(),
+                    scheduleRequest.getEndTime(),
+                    scheduleRequest.getStartLocation(),
+                    scheduleRequest.getLocation(),
+                    scheduleRequest.getMemo(),
+                    scheduleRequest.getCategory(),
+                    scheduleRequest.getSupplies(),
+                    scheduleRequest.getStartX(),
+                    scheduleRequest.getStartY(),
+                    scheduleRequest.getDestinationX(),
+                    scheduleRequest.getDestinationY()
             );
 
             return ChatResponse.builder()
@@ -583,10 +590,14 @@ public class ChatService {
     private String mapIntent(String intent) {
         if (intent == null) return null;
         switch (intent) {
-            case "create_event": return "CREATE_SCHEDULE";
-            case "get_schedule": return "QUERY_SCHEDULE";
-            case "delete_event": return "DELETE_SCHEDULE";
-            default: return intent;
+            case "create_event":
+                return "CREATE_SCHEDULE";
+            case "get_schedule":
+                return "QUERY_SCHEDULE";
+            case "delete_event":
+                return "DELETE_SCHEDULE";
+            default:
+                return intent;
         }
     }
 
@@ -598,26 +609,26 @@ public class ChatService {
             // 시스템 프롬프트 추가 (Function Call에 최적화된 프롬프트)
             if (messages.isEmpty()) {
                 String systemPrompt = String.format(
-                    "당신은 IGO 앱의 일정 관리 도우미입니다. 현재 시간은 %s입니다.\n" +
-                    "사용자의 요청을 분석하여 적절한 함수를 호출하거나 자연스러운 대화를 해주세요.\n\n" +
-                    "일정 관리 관련 요청이면 다음 형식으로 응답해주세요:\n" +
-                    "FUNCTION_CALL: [함수명]\n" +
-                    "PARAMETERS: {JSON 파라미터}\n\n" +
-                    "사용 가능한 함수:\n" +
-                    "1. create_schedule: 일정 생성\n" +
-                    "   - title (필수): 일정 제목\n" +
-                    "   - datetime (필수): 일정 시간 (yyyy-MM-ddTHH:mm 형식)\n" +
-                    "   - location: 위치\n" +
-                    "   - memo: 메모\n" +
-                    "   - supplies: 준비물\n" +
-                    "2. query_schedule: 일정 조회\n" +
-                    "   - datetime: 조회할 날짜 (없으면 오늘)\n" +
-                    "3. delete_schedule: 일정 삭제\n" +
-                    "   - title: 일정 제목\n" +
-                    "   - datetime: 일정 시간\n\n" +
-                    "상대적 시간 표현 (내일, 모레, 다음주 등)을 절대 시간으로 변환해주세요.\n" +
-                    "일정 관리와 관련 없는 질문이면 자연스럽게 대화해주세요.",
-                    currentTime.format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm"))
+                        "당신은 IGO 앱의 일정 관리 도우미입니다. 현재 시간은 %s입니다.\n" +
+                                "사용자의 요청을 분석하여 적절한 함수를 호출하거나 자연스러운 대화를 해주세요.\n\n" +
+                                "일정 관리 관련 요청이면 다음 형식으로 응답해주세요:\n" +
+                                "FUNCTION_CALL: [함수명]\n" +
+                                "PARAMETERS: {JSON 파라미터}\n\n" +
+                                "사용 가능한 함수:\n" +
+                                "1. create_schedule: 일정 생성\n" +
+                                "   - title (필수): 일정 제목\n" +
+                                "   - datetime (필수): 일정 시간 (yyyy-MM-ddTHH:mm 형식)\n" +
+                                "   - location: 위치\n" +
+                                "   - memo: 메모\n" +
+                                "   - supplies: 준비물\n" +
+                                "2. query_schedule: 일정 조회\n" +
+                                "   - datetime: 조회할 날짜 (없으면 오늘)\n" +
+                                "3. delete_schedule: 일정 삭제\n" +
+                                "   - title: 일정 제목\n" +
+                                "   - datetime: 일정 시간\n\n" +
+                                "상대적 시간 표현 (내일, 모레, 다음주 등)을 절대 시간으로 변환해주세요.\n" +
+                                "일정 관리와 관련 없는 질문이면 자연스럽게 대화해주세요.",
+                        currentTime.format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm"))
                 );
                 ChatMessage systemMessage = new ChatMessage("system", systemPrompt);
                 messages.add(systemMessage);

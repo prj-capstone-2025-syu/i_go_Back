@@ -16,9 +16,6 @@ public class OpenAIConfig {
     @Value("${openai.api.key}")
     private String openaiApiKey;
 
-    @Value("${gpt4.api.key}")
-    private String gpt4ApiKey;
-
     /**
      * 파인튜닝된 모델용 OpenAI 서비스 (기존 챗봇용)
      */
@@ -35,6 +32,15 @@ public class OpenAIConfig {
     @Bean("gpt4Service")
     public OpenAiService gpt4Service() {
         log.info("Initializing GPT-4 service for midpoint calculation");
-        return new OpenAiService(gpt4ApiKey, Duration.ofSeconds(60));
+        return new OpenAiService(openaiApiKey, Duration.ofSeconds(60));
+    }
+
+    /**
+     * GPT-5 Nano 모델용 OpenAI 서비스 (선호도 처리)
+     */
+    @Bean("gpt5NanoService")
+    public OpenAiService gpt5NanoService() {
+        log.info("Initializing GPT-5 Nano service for future use");
+        return new OpenAiService(openaiApiKey, Duration.ofSeconds(60));
     }
 }
