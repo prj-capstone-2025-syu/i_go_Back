@@ -4,6 +4,9 @@ import com.example.demo.dto.chat.ChatRequest;
 import com.example.demo.dto.chat.ChatResponse;
 import com.example.demo.dto.schedule.CreateScheduleRequest;
 import com.example.demo.entity.schedule.Schedule;
+import com.example.demo.entity.routine.Routine;
+import com.example.demo.repository.RoutineRepository;
+import com.example.demo.repository.UserRepository;
 import com.theokanning.openai.completion.chat.ChatCompletionRequest;
 import com.theokanning.openai.completion.chat.ChatCompletionResult;
 import com.theokanning.openai.completion.chat.ChatMessage;
@@ -12,6 +15,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
+import org.springframework.data.domain.PageRequest;
 
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
@@ -26,7 +30,9 @@ import java.util.regex.Pattern;
 public class ChatService {
     private final ScheduleService scheduleService;
     private final OpenAiService openAiService;
-    private final GeocodingService geocodingService;  // GeocodingService 주입
+    private final GeocodingService geocodingService;
+    private final RoutineRepository routineRepository;
+    private final UserRepository userRepository;
 
     @Value("${openai.model}")
     private String openaiModel;
@@ -690,6 +696,8 @@ public class ChatService {
                     return handleQueryScheduleFunction(userId, parameters);
                 case "delete_schedule":
                     return handleDeleteScheduleFunction(userId, parameters);
+                case "update_schedule":
+                    return handleUpdateScheduleFunction(userId, parameters);
                 default:
                     log.warn("Unknown function: {}", functionName);
                     return ChatResponse.builder()
@@ -736,6 +744,7 @@ public class ChatService {
             String locationInfo = (String) parameters.get("location");
             String memo = (String) parameters.get("memo");
             String supplies = (String) parameters.get("supplies");
+            String routineName = (String) parameters.get("routine");  // 루틴 이름 추가
 
             if (title == null || title.trim().isEmpty()) {
                 return ChatResponse.builder()
@@ -764,42 +773,87 @@ public class ChatService {
 
             LocalDateTime endTime = startTime.plusHours(1); // 기본 1시간
 
+            // 루틴 이름으로 루틴 찾기
+            Long routineId = null;
+            if (routineName != null && !routineName.trim().isEmpty()) {
+                try {
+                    Optional<Routine> routineOpt = routineRepository.findByUserIdAndNameIgnoreCase(userId, routineName.trim());
+                    if (routineOpt.isPresent()) {
+                        routineId = routineOpt.get().getId();
+                        log.info("루틴 '{}' 찾음. ID: {}", routineName, routineId);
+                    } else {
+                        log.warn("루틴 '{}' 찾을 수 없음. 루틴 없이 일정 생성", routineName);
+                    }
+                } catch (Exception e) {
+                    log.error("루틴 검색 중 오류: {}", e.getMessage());
+                }
+            }
+
             // location 필드 처리 - "출발지에서 도착지" 형태를 분리
             String startLocation = null;
             String location = null;
+            Double startX = 0.0, startY = 0.0, destinationX = 0.0, destinationY = 0.0;
 
             if (locationInfo != null && !locationInfo.trim().isEmpty()) {
                 String[] locations = parseLocationInfo(locationInfo);
                 if (locations.length == 2) {
-                    startLocation = locations[0]; // 출발지
-                    location = locations[1];      // 도착지
+                    startLocation = locations[0];
+                    location = locations[1];
                     log.debug("Parsed locations - Start: {}, Destination: {}", startLocation, location);
+
+                    // 좌표 변환
+                    var startCoords = geocodingService.getCoordinates(startLocation);
+                    if (startCoords != null) {
+                        startX = startCoords.getLat();
+                        startY = startCoords.getLng();
+                    }
+
+                    var destCoords = geocodingService.getCoordinates(location);
+                    if (destCoords != null) {
+                        destinationX = destCoords.getLat();
+                        destinationY = destCoords.getLng();
+                    }
                 } else {
-                    // 분리되지 않으면 전체를 도착지로 처리
                     location = locationInfo;
                     log.debug("Single location used as destination: {}", locationInfo);
+
+                    var coords = geocodingService.getCoordinates(location);
+                    if (coords != null) {
+                        destinationX = coords.getLat();
+                        destinationY = coords.getLng();
+                    }
                 }
             }
 
-            Schedule schedule = scheduleService.createSchedule(
-                    userId,
-                    title,
-                    startTime,
-                    endTime,
-                    startLocation, // 출발지
-                    location,      // 도착지
-                    memo,
-                    "PERSONAL", // 기본 카테고리
-                    supplies,
-                    0.0, // startX - 기본값 설정
-                    0.0, // startY - 기본값 설정
-                    0.0, // destinationX - 기본값 설정
-                    0.0  // destinationY - 기본값 설정
-            );
+            Schedule schedule;
+
+            // 루틴이 있으면 루틴 기반 일정 생성, 없으면 일반 일정 생성
+            if (routineId != null) {
+                schedule = scheduleService.createFromRoutine(
+                        userId, routineId, title, startTime, endTime,
+                        startLocation, startX, startY,
+                        location, destinationX, destinationY,
+                        memo, supplies, "PERSONAL"
+                );
+                log.info("루틴 기반 일정 생성 완료: {} (루틴 ID: {})", title, routineId);
+            } else {
+                schedule = scheduleService.createSchedule(
+                        userId, title, startTime, endTime,
+                        startLocation, location, memo,
+                        "PERSONAL", supplies,
+                        startX, startY, destinationX, destinationY
+                );
+                log.info("일반 일정 생성 완료: {}", title);
+            }
+
+            String responseMessage = routineId != null
+                ? String.format("'%s' 일정이 '%s' 루틴과 함께 %s에 등록되었습니다.",
+                    title, routineName, startTime.format(DateTimeFormatter.ofPattern("MM월 dd일 HH:mm")))
+                : String.format("'%s' 일정이 %s에 등록되었습니다.",
+                    title, startTime.format(DateTimeFormatter.ofPattern("MM월 dd일 HH:mm")));
 
             return ChatResponse.builder()
-                    .message(String.format("'%s' 일정이 %s에 등록되었습니다.",
-                            title, startTime.format(DateTimeFormatter.ofPattern("MM월 dd일 HH:mm"))))
+                    .message(responseMessage)
                     .intent("CREATE_SCHEDULE")
                     .action("created")
                     .data(schedule)
@@ -909,6 +963,155 @@ public class ChatService {
             log.error("Error in handleDeleteScheduleFunction: {}", e.getMessage(), e);
             return ChatResponse.builder()
                     .message("일정 삭제 중 오류가 발생했습니다: " + e.getMessage())
+                    .success(false)
+                    .build();
+        }
+    }
+
+    private ChatResponse handleUpdateScheduleFunction(Long userId, Map<String, Object> parameters) {
+        try {
+            log.debug("Updating schedule with parameters: {}", parameters);
+
+            // 수정할 일정 찾기
+            String scheduleIdStr = (String) parameters.get("schedule_id");
+            String title = (String) parameters.get("title");
+            String datetimeStr = (String) parameters.get("datetime");
+
+            // schedule_id가 있으면 ID로 찾기, 없으면 title+datetime으로 찾기
+            Schedule existingSchedule = null;
+
+            if (scheduleIdStr != null) {
+                try {
+                    Long scheduleId = Long.parseLong(scheduleIdStr);
+                    existingSchedule = scheduleService.getScheduleById(userId, scheduleId);
+                } catch (NumberFormatException e) {
+                    return ChatResponse.builder()
+                            .message("잘못된 일정 ID입니다.")
+                            .success(false)
+                            .build();
+                }
+            } else if (title != null) {
+                // 제목으로 일정 찾기
+                List<Schedule> candidates;
+                if (datetimeStr != null) {
+                    DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm");
+                    LocalDateTime dateTime = LocalDateTime.parse(datetimeStr, formatter);
+                    candidates = scheduleService.findSchedulesByTitleAndTime(userId, title, dateTime);
+                } else {
+                    candidates = scheduleService.findSchedulesByTitle(userId, title);
+                }
+
+                if (candidates.isEmpty()) {
+                    return ChatResponse.builder()
+                            .message(String.format("'%s' 제목의 일정을 찾을 수 없습니다.", title))
+                            .success(false)
+                            .build();
+                } else if (candidates.size() > 1) {
+                    return ChatResponse.builder()
+                            .message(String.format("'%s' 제목의 일정이 %d개 있습니다. 시간도 함께 입력해 주세요.", title, candidates.size()))
+                            .success(false)
+                            .build();
+                } else {
+                    existingSchedule = candidates.get(0);
+                }
+            } else {
+                return ChatResponse.builder()
+                        .message("수정할 일정을 특정할 수 없습니다. 일정 ID 또는 제목을 입력해 주세요.")
+                        .success(false)
+                        .build();
+            }
+
+            // 수정할 필드 추출 (기존 값 유지)
+            String newTitle = (String) parameters.getOrDefault("new_title", existingSchedule.getTitle());
+            String newDatetimeStr = (String) parameters.get("new_datetime");
+            String locationInfo = (String) parameters.get("location");
+            String memo = (String) parameters.getOrDefault("memo", existingSchedule.getMemo());
+            String supplies = (String) parameters.getOrDefault("supplies", existingSchedule.getSupplies());
+            String routineName = (String) parameters.get("routine");
+
+            LocalDateTime newStartTime = existingSchedule.getStartTime();
+            LocalDateTime newEndTime = existingSchedule.getEndTime();
+
+            if (newDatetimeStr != null && !newDatetimeStr.trim().isEmpty()) {
+                DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm");
+                newStartTime = LocalDateTime.parse(newDatetimeStr, formatter);
+                newEndTime = newStartTime.plusHours(1); // 기본 1시간
+            }
+
+            // 루틴 이름으로 루틴 찾기
+            Long routineId = existingSchedule.getRoutineId();
+            if (routineName != null && !routineName.trim().isEmpty()) {
+                Optional<Routine> routineOpt = routineRepository.findByUserIdAndNameIgnoreCase(userId, routineName.trim());
+                if (routineOpt.isPresent()) {
+                    routineId = routineOpt.get().getId();
+                    log.info("루틴 '{}' 찾음. ID: {}", routineName, routineId);
+                } else {
+                    log.warn("루틴 '{}' 찾을 수 없음.", routineName);
+                    return ChatResponse.builder()
+                            .message(String.format("'%s' 루틴을 찾을 수 없습니다.", routineName))
+                            .success(false)
+                            .build();
+                }
+            }
+
+            // location 필드 처리
+            String startLocation = existingSchedule.getStartLocation();
+            String location = existingSchedule.getLocation();
+            Double startX = existingSchedule.getStartX();
+            Double startY = existingSchedule.getStartY();
+            Double destinationX = existingSchedule.getDestinationX();
+            Double destinationY = existingSchedule.getDestinationY();
+
+            if (locationInfo != null && !locationInfo.trim().isEmpty()) {
+                String[] locations = parseLocationInfo(locationInfo);
+                if (locations.length == 2) {
+                    startLocation = locations[0];
+                    location = locations[1];
+
+                    // 좌표 변환
+                    var startCoords = geocodingService.getCoordinates(startLocation);
+                    if (startCoords != null) {
+                        startX = startCoords.getLat();
+                        startY = startCoords.getLng();
+                    }
+
+                    var destCoords = geocodingService.getCoordinates(location);
+                    if (destCoords != null) {
+                        destinationX = destCoords.getLat();
+                        destinationY = destCoords.getLng();
+                    }
+                } else {
+                    location = locationInfo;
+
+                    var coords = geocodingService.getCoordinates(location);
+                    if (coords != null) {
+                        destinationX = coords.getLat();
+                        destinationY = coords.getLng();
+                    }
+                }
+            }
+
+            // 일정 수정
+            Schedule updatedSchedule = scheduleService.updateSchedule(
+                    userId, existingSchedule.getId(), routineId,
+                    newTitle, newStartTime, newEndTime,
+                    startLocation, startX, startY,
+                    location, destinationX, destinationY,
+                    memo, supplies, "PERSONAL"
+            );
+
+            return ChatResponse.builder()
+                    .message(String.format("'%s' 일정이 수정되었습니다.", newTitle))
+                    .intent("UPDATE_SCHEDULE")
+                    .action("updated")
+                    .data(updatedSchedule)
+                    .success(true)
+                    .build();
+
+        } catch (Exception e) {
+            log.error("Error in handleUpdateScheduleFunction: {}", e.getMessage(), e);
+            return ChatResponse.builder()
+                    .message("일정 수정 중 오류가 발생했습니다: " + e.getMessage())
                     .success(false)
                     .build();
         }
