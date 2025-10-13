@@ -10,6 +10,7 @@ import org.springframework.web.client.RestTemplate;
 import org.springframework.web.util.UriComponentsBuilder;
 
 import java.net.URI;
+import java.nio.charset.StandardCharsets;
 
 @Slf4j
 @Service
@@ -23,85 +24,89 @@ public class GeocodingService {
 
     public Coordinates getCoordinates(String address) {
         try {
-            // diff (-) 수동 인코딩 라인 삭제
-            // String encodedAddress = URLEncoder.encode(address, StandardCharsets.UTF_8.toString());
-
-            // diff (+) UriComponentsBuilder에 원본 주소를 직접 전달하고, toUri()로 최종 URI 생성
+            // UriComponentsBuilder를 사용하여 자동 인코딩 (이중 인코딩 방지)
             URI uri = UriComponentsBuilder.fromHttpUrl("https://maps.googleapis.com/maps/api/geocode/json")
-                    .queryParam("address", address) // 원본 주소 사용
+                    .queryParam("address", address.trim())
                     .queryParam("key", googleMapsApiKey)
                     .queryParam("language", "ko")
                     .queryParam("region", "kr")
-                    .build(true) // 인코딩 활성화
+                    .build()
+                    .encode(StandardCharsets.UTF_8)
                     .toUri();
 
             log.debug("Geocoding request for '{}' -> URL: {}", address, uri);
             String response = restTemplate.getForObject(uri, String.class);
             JsonNode root = objectMapper.readTree(response);
 
-            String status = root.path("status").asText();
+            if (root.has("status") && "OK".equals(root.get("status").asText())) {
+                JsonNode location = root.get("results")
+                        .get(0)
+                        .get("geometry")
+                        .get("location");
 
-            if ("OK".equals(status)) {
-                JsonNode location = root.path("results").path(0).path("geometry").path("location");
-                return new Coordinates(location.path("lat").asDouble(), location.path("lng").asDouble());
-            }
-
-            // diff (+) 재귀 호출을 안전한 for 반복문으로 변경
-            if ("ZERO_RESULTS".equals(status)) {
-                log.warn("주소 '{}' 검색 실패. 대체 검색어를 시도합니다.", address);
-                for (String alternative : generateAlternativeSearchTerms(address)) {
-                    log.info("대체 검색어 시도: {}", alternative);
-                    // 재귀가 아닌, 별도 private 메서드로 호출하여 중복 코드 방지 및 스택오버플로우 방지
-                    Coordinates coords = attemptGeocoding(alternative);
+                return new Coordinates(
+                        location.get("lat").asDouble(),
+                        location.get("lng").asDouble()
+                );
+            } else if (root.has("status") && "ZERO_RESULTS".equals(root.get("status").asText())) {
+                // 주소를 찾을 수 없는 경우 대체 검색어로 재시도
+                String[] alternatives = generateAlternativeSearchTerms(address);
+                for (String alternative : alternatives) {
+                    log.info("주소 검색 실패. 대체 검색어로 재시도: {}", alternative);
+                    Coordinates coords = getCoordinates(alternative);
                     if (coords != null) {
                         return coords;
                     }
                 }
             }
 
-            log.error("Geocoding 최종 실패. 주소: '{}', 상태: {}", address, status);
             return null;
-
         } catch (Exception e) {
             log.error("Error getting coordinates for address '{}': {}", address, e.getMessage());
             return null;
         }
     }
 
-    // diff (+) 실제 API 호출 로직을 별도 메서드로 분리
-    private Coordinates attemptGeocoding(String address) {
-        try {
-            URI uri = UriComponentsBuilder.fromHttpUrl("https://maps.googleapis.com/maps/api/geocode/json")
-                .queryParam("address", address)
-                .queryParam("key", googleMapsApiKey)
-                .queryParam("language", "ko")
-                .queryParam("region", "kr")
-                .build(true).toUri();
-
-            String response = restTemplate.getForObject(uri, String.class);
-            JsonNode root = objectMapper.readTree(response);
-
-            if ("OK".equals(root.path("status").asText())) {
-                JsonNode location = root.path("results").path(0).path("geometry").path("location");
-                return new Coordinates(location.path("lat").asDouble(), location.path("lng").asDouble());
-            }
-        } catch (Exception e) {
-            log.warn("대체 검색어 '{}' 처리 중 오류: {}", address, e.getMessage());
-        }
-        return null;
-    }
-
     private String[] generateAlternativeSearchTerms(String address) {
-        if (address.endsWith("역")) return new String[]{ address.substring(0, address.length() - 1), address + " 지하철역" };
-        if (address.contains("시") || address.contains("구") || address.contains("동")) return new String[]{ address.replaceAll("\\s+", ""), address + " 일대" };
-        return new String[]{ address + " 주변", address.replaceAll("\\s+", "") };
+        // 지하철역의 경우
+        if (address.endsWith("역")) {
+            return new String[]{
+                address.substring(0, address.length() - 1), // "역" 제거
+                address + " 지하철역",
+                address + " 전철역"
+            };
+        }
+
+        // 일반 주소의 경우
+        if (address.contains("시") || address.contains("구") || address.contains("동")) {
+            return new String[]{
+                address.replaceAll("\\s+", ""), // 공백 제거
+                address + " 일대",
+                address + " 중심"
+            };
+        }
+
+        return new String[]{
+            address + " 주변",
+            address.replaceAll("\\s+", "") // 공백 제거
+        };
     }
 
     public static class Coordinates {
         private final double lat;
         private final double lng;
-        public Coordinates(double lat, double lng) { this.lat = lat; this.lng = lng; }
-        public double getLat() { return lat; }
-        public double getLng() { return lng; }
+
+        public Coordinates(double lat, double lng) {
+            this.lat = lat;
+            this.lng = lng;
+        }
+
+        public double getLat() {
+            return lat;
+        }
+
+        public double getLng() {
+            return lng;
+        }
     }
 }
