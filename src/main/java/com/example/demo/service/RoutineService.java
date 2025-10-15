@@ -234,12 +234,20 @@ public class RoutineService {
                 .orElseThrow(() -> new IllegalArgumentException("루틴을 찾을 수 없습니다. ID: " + routineId));
 
         List<CalculatedRoutineItemTime> calculatedTimes = new ArrayList<>();
-        LocalDateTime currentItemStartTime = scheduleStartTime;
 
         // RoutineItem을 orderIndex 순으로 정렬
         List<RoutineItem> sortedItems = routine.getItems().stream()
                 .sorted(Comparator.comparingInt(RoutineItem::getOrderIndex))
                 .toList();
+
+        // 전체 루틴 소요 시간 계산
+        int totalDurationMinutes = sortedItems.stream()
+                .mapToInt(RoutineItem::getDurationMinutes)
+                .sum();
+
+        // 루틴 시작 시간 = 일정 시작 시간 - 전체 루틴 소요 시간
+        LocalDateTime routineStartTime = scheduleStartTime.minusMinutes(totalDurationMinutes);
+        LocalDateTime currentItemStartTime = routineStartTime;
 
         for (RoutineItem item : sortedItems) {
             LocalDateTime itemEndTime = currentItemStartTime.plusMinutes(item.getDurationMinutes());

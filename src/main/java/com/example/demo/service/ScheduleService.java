@@ -32,6 +32,7 @@ public class ScheduleService {
     private final UserRepository userRepository;
     private final RoutineService routineService;
     private final ScheduleNotificationService scheduleNotificationService;
+    private final TransportService transportService;
 
     // 루틴 기반 일정 생성 (종료 시간을 직접 받음)
     public Schedule createFromRoutine(Long userId, Long routineId, String title, LocalDateTime startTime,
@@ -56,6 +57,34 @@ public class ScheduleService {
             throw new IllegalArgumentException("종료 시간이 유효하지 않습니다. 종료 시간은 시작 시간보다 뒤여야 합니다.");
         }
 
+        // 교통 시간 계산 (좌표가 있는 경우에만)
+        Integer originalDrivingTime = null;
+        Integer originalTransitTime = null;
+
+        if (startX != null && startY != null && destinationX != null && destinationY != null) {
+            try {
+                com.example.demo.dto.transport.TransportTimeRequest transportRequest =
+                        new com.example.demo.dto.transport.TransportTimeRequest();
+                transportRequest.setStartX(startX);
+                transportRequest.setStartY(startY);
+                transportRequest.setEndX(destinationX);
+                transportRequest.setEndY(destinationY);
+                transportRequest.setRemoteEvent(false);
+
+                com.example.demo.dto.transport.TransportTimeResponse transportTimes =
+                        transportService.calculateAllTransportTimes(transportRequest);
+
+                originalDrivingTime = transportTimes.getDriving();
+                originalTransitTime = transportTimes.getTransit();
+
+                log.info("📊 [ScheduleService] 원본 교통 시간 저장 - Schedule: '{}', 자차: {}분, 대중교통: {}분",
+                        title, originalDrivingTime, originalTransitTime);
+            } catch (Exception e) {
+                log.error("❌ [ScheduleService] 교통 시간 계산 실패 - Schedule: '{}', 에러: {}",
+                        title, e.getMessage());
+            }
+        }
+
         Schedule schedule = Schedule.builder()
                 .title(title)
                 .startTime(startTime)
@@ -72,6 +101,8 @@ public class ScheduleService {
                 .supplies(supplies)
                 .user(user)
                 .status(Schedule.ScheduleStatus.PENDING)
+                .originalDrivingTime(originalDrivingTime)
+                .originalTransitTime(originalTransitTime)
                 .build();
 
         try {
@@ -147,6 +178,40 @@ public class ScheduleService {
             throw new IllegalArgumentException("종료 시간이 유효하지 않습니다. 종료 시간은 시작 시간보다 뒤여야 합니다.");
         }
 
+        // 좌표 변경 여부 확인
+        boolean coordinatesChanged = false;
+        if ((startX != null && !startX.equals(schedule.getStartX())) ||
+            (startY != null && !startY.equals(schedule.getStartY())) ||
+            (destinationX != null && !destinationX.equals(schedule.getDestinationX())) ||
+            (destinationY != null && !destinationY.equals(schedule.getDestinationY()))) {
+            coordinatesChanged = true;
+        }
+
+        // 좌표가 변경되었으면 교통 시간 재계산
+        if (coordinatesChanged && startX != null && startY != null && destinationX != null && destinationY != null) {
+            try {
+                com.example.demo.dto.transport.TransportTimeRequest transportRequest =
+                        new com.example.demo.dto.transport.TransportTimeRequest();
+                transportRequest.setStartX(startX);
+                transportRequest.setStartY(startY);
+                transportRequest.setEndX(destinationX);
+                transportRequest.setEndY(destinationY);
+                transportRequest.setRemoteEvent(false);
+
+                com.example.demo.dto.transport.TransportTimeResponse transportTimes =
+                        transportService.calculateAllTransportTimes(transportRequest);
+
+                schedule.setOriginalDrivingTime(transportTimes.getDriving());
+                schedule.setOriginalTransitTime(transportTimes.getTransit());
+
+                log.info("📊 [ScheduleService] 일정 수정 - 교통 시간 재계산 완료 - Schedule ID: {}, 자차: {}분, 대중교통: {}분",
+                        scheduleId, transportTimes.getDriving(), transportTimes.getTransit());
+            } catch (Exception e) {
+                log.error("❌ [ScheduleService] 일정 수정 - 교통 시간 재계산 실패 - Schedule ID: {}, 에러: {}",
+                        scheduleId, e.getMessage());
+            }
+        }
+
         schedule.setTitle(title);
         schedule.setStartTime(startTime);
         schedule.setEndTime(endTime);
@@ -181,7 +246,7 @@ public class ScheduleService {
             String currentRoutineItemName = routineService.getCurrentRoutineItemName(routineId, startTime, now);
             if (currentRoutineItemName != null) {
                 scheduleNotificationService.sendDelayedRoutineItemNotification(savedSchedule, schedule.getUser(), currentRoutineItemName);
-                log.info("일�� 수정 시 지연 등록 알림 처리 완료 - Schedule ID: {}, Current Item: {}", savedSchedule.getId(), currentRoutineItemName);
+                log.info("일정 수정 시 지연 등록 알림 처리 완료 - Schedule ID: {}, Current Item: {}", savedSchedule.getId(), currentRoutineItemName);
             }
         }
 
