@@ -252,20 +252,77 @@ public class ScheduleNotificationService {
 
     // 스케쥴 시작될 때 루틴의 첫 아이템 검사
     private void processRoutineItemsAtScheduleStart(Schedule schedule, User user, LocalDateTime now) {
-    if (schedule.getRoutineId() == null || !user.isNotifyRoutineProgress()) {
-        return; // 루틴이 없거나 루틴 알림 설정이 꺼져있으면 실행하지 않음
-    }
+        if (schedule.getRoutineId() == null || !user.isNotifyRoutineProgress()) {
+            return; // 루틴이 없거나 루틴 알림 설정이 꺼져있으면 실행하지 않음
+        }
 
-    List<CalculatedRoutineItemTime> calculatedItems = routineService.calculateRoutineItemTimes(
-            schedule.getRoutineId(), schedule.getStartTime());
+        List<CalculatedRoutineItemTime> calculatedItems = routineService.calculateRoutineItemTimes(
+                schedule.getRoutineId(), schedule.getStartTime());
 
-    for (CalculatedRoutineItemTime itemTime : calculatedItems) {
-        // 스케줄 시작 시간과 루틴 아이템 시작 시간이 같은 경우에만 알림 처리
-        if (itemTime.getStartTime().isEqual(now)) {
-            processRoutineItemStartNotification(schedule, user, itemTime);
+        if (calculatedItems.isEmpty()) {
+            log.warn("⚠️ [ScheduleNotificationService] 루틴 아이템이 없습니다 - Schedule ID: {}", schedule.getId());
+            return;
+        }
+
+        CalculatedRoutineItemTime currentItem = null;
+        CalculatedRoutineItemTime lastCompletedItem = null;
+        CalculatedRoutineItemTime firstUpcomingItem = null;
+
+        // 루틴 아이템 분류
+        for (CalculatedRoutineItemTime itemTime : calculatedItems) {
+            // 1. 현재 진행 중인 아이템 찾기 (시작 <= 현재 < 종료)
+            if (!itemTime.getStartTime().isAfter(now) && itemTime.getEndTime().isAfter(now)) {
+                currentItem = itemTime;
+                break; // 현재 진행 중인 아이템을 찾으면 우선순위가 가장 높음
+            }
+            // 2. 이미 완료된 아이템 중 가장 마지막 아이템 찾기 (종료 <= 현재)
+            else if (!itemTime.getEndTime().isAfter(now)) {
+                lastCompletedItem = itemTime; // 계속 갱신하여 마지막 완료 아이템을 찾음
+            }
+            // 3. 아직 시작 안 한 아이템 중 첫 번째 아이템 찾기 (시작 > 현재)
+            else if (itemTime.getStartTime().isAfter(now) && firstUpcomingItem == null) {
+                firstUpcomingItem = itemTime;
+            }
+        }
+
+        // 알림 전송 우선순위: 현재 진행 중 > 마지막 완료 > 첫 번째 예정
+        CalculatedRoutineItemTime itemToNotify = null;
+        String notificationContext = "";
+
+        if (currentItem != null) {
+            // 케이스 1: 현재 진행 중인 아이템이 있음
+            itemToNotify = currentItem;
+            notificationContext = "현재 진행 중";
+            log.info("🔔 [ScheduleNotificationService] 현재 진행 중인 루틴 아이템 발견 - Schedule ID: {}, Item: '{}', 시작: {}, 종료: {}, 현재: {}",
+                    schedule.getId(), currentItem.getRoutineItemName(),
+                    currentItem.getStartTime(), currentItem.getEndTime(), now);
+        }
+        else if (lastCompletedItem != null) {
+            // 케이스 2: 모든 아이템이 이미 완료됨 (스케줄 시작 시간이 루틴 종료 시간과 같거나 늦음)
+            itemToNotify = lastCompletedItem;
+            notificationContext = "이미 완료 (늦은 시작)";
+            log.info("⏰ [ScheduleNotificationService] 모든 루틴 아이템 완료됨 - 마지막 아이템 알림 - Schedule ID: {}, Item: '{}', 종료: {}, 현재: {}",
+                    schedule.getId(), lastCompletedItem.getRoutineItemName(),
+                    lastCompletedItem.getEndTime(), now);
+        }
+        else if (firstUpcomingItem != null) {
+            // 케이스 3: 아직 시작 안 한 아이템만 있음 (정상적이지 않은 상황이지만 방어 코드)
+            itemToNotify = firstUpcomingItem;
+            notificationContext = "다음 예정";
+            log.info("🔜 [ScheduleNotificationService] 루틴이 아직 시작 안 됨 - 첫 아이템 알림 - Schedule ID: {}, Item: '{}', 시작: {}, 현재: {}",
+                    schedule.getId(), firstUpcomingItem.getRoutineItemName(),
+                    firstUpcomingItem.getStartTime(), now);
+        }
+
+        // 알림 전송
+        if (itemToNotify != null) {
+            log.info("📤 [ScheduleNotificationService] 스케줄 시작 시 루틴 아이템 알림 전송 - Context: '{}', Schedule ID: {}, Item: '{}'",
+                    notificationContext, schedule.getId(), itemToNotify.getRoutineItemName());
+            processRoutineItemStartNotification(schedule, user, itemToNotify);
+        } else {
+            log.error("❌ [ScheduleNotificationService] 알림 전송할 루틴 아이템을 찾지 못함 - Schedule ID: {}", schedule.getId());
         }
     }
-}
 
     // 스케줄 시작 알림 본문 생성
     private String createScheduleStartBody(Schedule schedule) {
