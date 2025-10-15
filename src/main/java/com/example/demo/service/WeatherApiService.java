@@ -133,4 +133,47 @@ public class WeatherApiService {
         // 기본값
         return "맑음";
     }
+
+    /**
+     * 악천후 여부 판단
+     * @param weatherResponse 날씨 정보
+     * @return 악천후 여부
+     */
+    public boolean isSevereWeather(WeatherResponse weatherResponse) {
+        if (weatherResponse.getWeather() == null || weatherResponse.getWeather().isEmpty()) {
+            return false;
+        }
+
+        String main = weatherResponse.getWeather().get(0).getMain().toLowerCase();
+        String description = weatherResponse.getWeather().get(0).getDescription().toLowerCase();
+
+        // 이슬비는 제외
+        if (main.contains("drizzle") || description.contains("이슬비")) {
+            log.info("날씨 체크: 이슬비 감지 - 악천후 아님");
+            return false;
+        }
+
+        // 악천후 판단: 비, 눈, 천둥, 폭풍
+        boolean isSevere = main.contains("rain") ||
+                          main.contains("snow") ||
+                          main.contains("thunderstorm") ||
+                          main.contains("thunder") ||
+                          main.contains("storm");
+
+        if (isSevere) {
+            log.warn("⚠️ 악천후 감지: {} ({})", main, description);
+        }
+
+        return isSevere;
+    }
+
+    /**
+     * 악천후 판단을 위한 날씨 타입 문자열 반환
+     */
+    public String getSevereWeatherDescription(WeatherResponse weatherResponse) {
+        if (weatherResponse.getWeather() == null || weatherResponse.getWeather().isEmpty()) {
+            return "";
+        }
+        return weatherResponse.getWeather().get(0).getDescription();
+    }
 }

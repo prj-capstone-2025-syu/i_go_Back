@@ -406,6 +406,209 @@ public class ScheduleService {
                 startX, startY, destinationX, destinationY);
     }
 
+    //Function_Call
+    public boolean deleteScheduleByArgs(Long userId, Map<String, Object> args) {
+        log.info("ScheduleService.deleteScheduleByArgs received args: {}", args);
+        
+        String title = (String) args.get("title");
+        String datetime = (String) args.get("datetime");
+        DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm");
+
+        // 1. 제목+시간 모두 있을 때
+        if (title != null && datetime != null) {
+            LocalDateTime dateTime = LocalDateTime.parse(datetime, formatter);
+            List<Schedule> candidates = findSchedulesByTitleAndTime(userId, title, dateTime);
+            if (candidates.size() == 1) {
+                Schedule schedule = candidates.get(0);
+                log.info("Deleting schedule ID {} (Title: '{}') with Google Calendar sync", 
+                        schedule.getId(), schedule.getTitle());
+                // deleteSchedule 메서드는 내부적으로 GoogleCalendarService.deleteEvent()를 호출합니다
+                deleteSchedule(userId, schedule.getId());
+                return true;
+            } else if (candidates.isEmpty()) {
+                log.warn("No schedule found for deletion with title: '{}', datetime: {}", title, datetime);
+            } else {
+                log.warn("Multiple schedules found for deletion with title: '{}', datetime: {}", title, datetime);
+            }
+        }
+
+        // 2. 제목만 있을 때
+        if (title != null && datetime == null) {
+            List<Schedule> candidates = findSchedulesByTitle(userId, title);
+            if (candidates.size() == 1) {
+                Schedule schedule = candidates.get(0);
+                log.info("Deleting schedule ID {} (Title: '{}') with Google Calendar sync", 
+                        schedule.getId(), schedule.getTitle());
+                deleteSchedule(userId, schedule.getId());
+                return true;
+            } else if (candidates.isEmpty()) {
+                log.warn("No schedule found for deletion with title: '{}'", title);
+            } else {
+                log.warn("Multiple schedules found for deletion with title: '{}'. Found {} schedules.", 
+                        title, candidates.size());
+            }
+        }
+
+        // 3. 시간만 있을 때
+        if (title == null && datetime != null) {
+            LocalDateTime dateTime = LocalDateTime.parse(datetime, formatter);
+            List<Schedule> candidates = findSchedulesByTime(userId, dateTime);
+            if (candidates.size() == 1) {
+                Schedule schedule = candidates.get(0);
+                log.info("Deleting schedule ID {} (Title: '{}') with Google Calendar sync", 
+                        schedule.getId(), schedule.getTitle());
+                deleteSchedule(userId, schedule.getId());
+                return true;
+            } else if (candidates.isEmpty()) {
+                log.warn("No schedule found for deletion at datetime: {}", datetime);
+            } else {
+                log.warn("Multiple schedules found for deletion at datetime: {}. Found {} schedules.", 
+                        datetime, candidates.size());
+            }
+        }
+
+        return false;
+    }
+
+    //Function_Call
+    public Schedule updateScheduleByArgs(Long userId, Map<String, Object> args) {
+        log.info("ScheduleService.updateScheduleByArgs received args: {}", args);
+        
+        String title = (String) args.get("title");
+        String datetime = (String) args.get("datetime");
+        String locationInfo = (String) args.get("location");
+        
+        // memo 처리 (다양한 필드명 지원)
+        String memo = "";
+        Object memoVal = args.get("memo");
+        if (memoVal instanceof String && !((String) memoVal).isEmpty()) {
+            memo = (String) memoVal;
+        } else {
+            Object notesVal = args.get("notes");
+            if (notesVal instanceof String && !((String) notesVal).isEmpty()) {
+                memo = (String) notesVal;
+            } else {
+                Object descriptionVal = args.get("description");
+                if (descriptionVal instanceof String && !((String) descriptionVal).isEmpty()) {
+                    memo = (String) descriptionVal;
+                }
+            }
+        }
+        
+        String category = (String) args.getOrDefault("category", "PERSONAL");
+        
+        // supplies 처리
+        String supplies = "";
+        Object suppliesVal = args.get("supplies");
+        if (suppliesVal instanceof String && !((String) suppliesVal).isEmpty()) {
+            supplies = (String) suppliesVal;
+        } else if (suppliesVal instanceof List) {
+            try {
+                List<?> suppliesList = (List<?>) suppliesVal;
+                supplies = suppliesList.stream().map(Object::toString).collect(Collectors.joining(", "));
+            } catch (Exception e) { 
+                log.warn("Error processing 'supplies' as List: {}", e.getMessage()); 
+            }
+        }
+
+        if (supplies.isEmpty()) {
+            Object itemsVal = args.get("items");
+            if (itemsVal instanceof String && !((String) itemsVal).isEmpty()) {
+                supplies = (String) itemsVal;
+            } else if (itemsVal instanceof List) {
+                try {
+                    List<?> itemsList = (List<?>) itemsVal;
+                    supplies = itemsList.stream().map(Object::toString).collect(Collectors.joining(", "));
+                } catch (Exception e) { 
+                    log.warn("Error processing 'items' as List: {}", e.getMessage()); 
+                }
+            }
+        }
+
+        DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm");
+        
+        // 기존 일정 찾기 - 더 유연한 검색
+        List<Schedule> candidates;
+        
+        if (title != null && datetime != null) {
+            LocalDateTime dateTime = LocalDateTime.parse(datetime, formatter);
+            candidates = findSchedulesByTitleAndTime(userId, title, dateTime);
+        } else if (title != null) {
+            candidates = findSchedulesByTitle(userId, title);
+        } else if (datetime != null) {
+            LocalDateTime dateTime = LocalDateTime.parse(datetime, formatter);
+            candidates = findSchedulesByTime(userId, dateTime);
+        } else {
+            throw new IllegalArgumentException("수정할 일정을 식별할 수 있는 정보(제목 또는 시간)가 필요합니다.");
+        }
+        
+        if (candidates.isEmpty()) {
+            throw new IllegalArgumentException("수정할 일정을 찾을 수 없습니다.");
+        }
+        
+        if (candidates.size() > 1) {
+            throw new IllegalArgumentException("조건에 맞는 일정이 여러 개 있습니다. 더 구체적인 정보를 제공해주세요.");
+        }
+
+        Schedule existingSchedule = candidates.get(0);
+        
+        // 업데이트할 값 준비 (기존 값 유지 또는 새 값 적용)
+        String updatedTitle = title != null ? title : existingSchedule.getTitle();
+        LocalDateTime updatedStartTime = datetime != null ? LocalDateTime.parse(datetime, formatter) : existingSchedule.getStartTime();
+        LocalDateTime updatedEndTime = datetime != null ? updatedStartTime.plusHours(1) : existingSchedule.getEndTime();
+        
+        // location 필드 처리 - "출발지에서 도착지" 형태를 분리
+        String startLocation = existingSchedule.getStartLocation();
+        String location = existingSchedule.getLocation();
+        
+        if (locationInfo != null && !locationInfo.trim().isEmpty()) {
+            String[] locations = parseLocationInfo(locationInfo);
+            if (locations.length == 2) {
+                startLocation = locations[0]; // 출발지
+                location = locations[1];      // 도착지
+                log.info("Parsed locations for update - Start: {}, Destination: {}", startLocation, location);
+            } else {
+                // 분리되지 않으면 전체를 도착지로 처리
+                location = locationInfo;
+                log.info("Single location used as destination for update: {}", location);
+            }
+        }
+        
+        String updatedMemo = memo.isEmpty() ? existingSchedule.getMemo() : memo;
+        String updatedSupplies = supplies.isEmpty() ? existingSchedule.getSupplies() : supplies;
+
+        // 좌표값 처리 (있으면 사용, 없으면 기존 값 유지)
+        Double startX = args.get("startX") instanceof Number ? ((Number) args.get("startX")).doubleValue() : 
+                        (existingSchedule.getStartX() != null ? existingSchedule.getStartX() : 0.0);
+        Double startY = args.get("startY") instanceof Number ? ((Number) args.get("startY")).doubleValue() : 
+                        (existingSchedule.getStartY() != null ? existingSchedule.getStartY() : 0.0);
+        Double destinationX = args.get("destinationX") instanceof Number ? ((Number) args.get("destinationX")).doubleValue() : 
+                              (existingSchedule.getDestinationX() != null ? existingSchedule.getDestinationX() : 0.0);
+        Double destinationY = args.get("destinationY") instanceof Number ? ((Number) args.get("destinationY")).doubleValue() : 
+                              (existingSchedule.getDestinationY() != null ? existingSchedule.getDestinationY() : 0.0);
+
+        log.info("Updating schedule ID {} with Google Calendar sync", existingSchedule.getId());
+        
+        // updateSchedule 메서드는 내부적으로 GoogleCalendarService.updateEvent()를 호출합니다
+        return updateSchedule(
+            userId,
+            existingSchedule.getId(),
+            existingSchedule.getRoutineId(), // 기존 routineId 유지
+            updatedTitle,
+            updatedStartTime,
+            updatedEndTime,
+            startLocation,
+            startX,
+            startY,
+            location,
+            destinationX,
+            destinationY,
+            updatedMemo,
+            updatedSupplies,
+            category
+        );
+    }
+
     /**
      * "출발지에서 도착지" 형태의 문자열을 파싱하여 [출발지, 도착지] 배열로 반환
      */
@@ -443,97 +646,6 @@ public class ScheduleService {
 
         // 분리할 수 없으면 빈 배열 반환
         return new String[0];
-    }
-
-    //Function_Call
-    public boolean deleteScheduleByArgs(Long userId, Map<String, Object> args) {
-        String title = (String) args.get("title");
-        String datetime = (String) args.get("datetime");
-        DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm");
-
-        // 1. 제목+시간 모두 있을 때
-        if (title != null && datetime != null) {
-            LocalDateTime dateTime = LocalDateTime.parse(datetime, formatter);
-            List<Schedule> candidates = findSchedulesByTitleAndTime(userId, title, dateTime);
-            if (candidates.size() == 1) {
-                deleteSchedule(userId, candidates.get(0).getId());
-                return true;
-            }
-        }
-
-        // 2. 제목만 있을 때
-        if (title != null && datetime == null) {
-            List<Schedule> candidates = findSchedulesByTitle(userId, title);
-            if (candidates.size() == 1) {
-                deleteSchedule(userId, candidates.get(0).getId());
-                return true;
-            }
-        }
-
-        // 3. 시간만 있을 때
-        if (title == null && datetime != null) {
-            LocalDateTime dateTime = LocalDateTime.parse(datetime, formatter);
-            List<Schedule> candidates = findSchedulesByTime(userId, dateTime);
-            if (candidates.size() == 1) {
-                deleteSchedule(userId, candidates.get(0).getId());
-                return true;
-            }
-        }
-
-        return false;
-    }
-
-    //Function_Call
-    public Schedule updateScheduleByArgs(Long userId, Map<String, Object> args) {
-        String title = (String) args.get("title");
-        String datetime = (String) args.get("datetime");
-        String locationInfo = (String) args.get("location");
-        String memo = (String) args.get("memo");
-        String category = (String) args.getOrDefault("category", "PERSONAL");
-
-        DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm");
-        LocalDateTime startTime = LocalDateTime.parse(datetime, formatter);
-        LocalDateTime endTime = startTime.plusHours(1); // 기본 1시간
-
-        // location 필드 처리 - "출발지에서 도착지" 형태를 분리
-        String startLocation = null;
-        String location = null;
-        
-        if (locationInfo != null && !locationInfo.trim().isEmpty()) {
-            String[] locations = parseLocationInfo(locationInfo);
-            if (locations.length == 2) {
-                startLocation = locations[0]; // 출발지
-                location = locations[1];      // 도착지
-            } else {
-                // 분리되지 않으면 전체를 도착지로 처리
-                location = locationInfo;
-            }
-        }
-
-        // 기존 일정 찾기
-        List<Schedule> candidates = findSchedulesByTitleAndTime(userId, title, startTime);
-        if (candidates.size() != 1) {
-            throw new IllegalArgumentException("수정할 일정을 찾을 수 없습니다.");
-        }
-
-        Schedule schedule = candidates.get(0);
-        return updateSchedule(
-            userId,
-            schedule.getId(),
-            null, // routineId는 null로 설정
-            title,
-            startTime,
-            endTime,
-            startLocation, // 출발지
-            0.0, // startX
-            0.0, // startY
-            location, // 도착지
-            0.0, // destinationX
-            0.0, // destinationY
-            memo,
-            null, // supplies는 null로 설정
-            category
-        );
     }
 
     /**

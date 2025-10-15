@@ -307,18 +307,32 @@ public class ScheduleNotificationService {
                 return;
             }
 
-            fcmService.sendMessageToToken(user.getFcmToken(), title, body, data);
-            log.info("{} 알림 전송 성공: 사용자 ID {}, 관련 ID {}", notificationType, user.getId(), relatedId);
+            // 동시성 제어: 알림 전송 전에 다시 한번 중복 확인
+            synchronized (this) {
+                Optional<Notification> existingCheck = notificationRepository
+                        .findByUserAndRelatedIdAndNotificationType(user, relatedId, notificationType);
 
-            Notification notification = Notification.builder()
-                    .user(user)
-                    .title(title)
-                    .body(body)
-                    .relatedId(relatedId)
-                    .notificationType(notificationType)
-                    .build();
-            notificationRepository.save(notification);
-            log.info("{} 알림 DB 저장 완료: 알림 ID {}", notificationType, notification.getId());
+                if (existingCheck.isPresent()) {
+                    log.info("중복 알림 방지: 이미 존재하는 알림 - 사용자 ID: {}, 관련 ID: {}, 타입: {}",
+                            user.getId(), relatedId, notificationType);
+                    return;
+                }
+
+                // DB에 먼저 저장
+                Notification notification = Notification.builder()
+                        .user(user)
+                        .title(title)
+                        .body(body)
+                        .relatedId(relatedId)
+                        .notificationType(notificationType)
+                        .build();
+                notificationRepository.save(notification);
+                log.info("{} 알림 DB 저장 완료: 알림 ID {}", notificationType, notification.getId());
+
+                // FCM 전송
+                fcmService.sendMessageToToken(user.getFcmToken(), title, body, data);
+                log.info("{} 알림 전송 성공: 사용자 ID {}, 관련 ID {}", notificationType, user.getId(), relatedId);
+            }
 
         } catch (Exception e) {
             log.error("{} 알림 전송/저장 실패: 사용자 ID {}, 관련 ID {}. 오류: {}",
@@ -497,6 +511,9 @@ public class ScheduleNotificationService {
                     WeatherResponse startWeather = tuple.getT1();
                     WeatherResponse destinationWeather = tuple.getT2();
 
+                    // 악천후 체크 및 시간 조정
+                    boolean isSevereWeather = checkAndHandleSevereWeather(schedule, startWeather, destinationWeather, bodyBuilder, data);
+
                     // 알림 메시지에 날씨 정보 추가
                     if (startWeather != null || destinationWeather != null) {
                         bodyBuilder.append("\n\n🌤️ 날씨 정보:");
@@ -550,5 +567,94 @@ public class ScheduleNotificationService {
                     return data;
                 })
                 .onErrorReturn(data); // 오류 시 원본 data 반환
+    }
+
+    /**
+     * 악천후 체크 및 일정 시간 조정 처리
+     * @param schedule 스케줄 정보
+     * @param startWeather 출발지 날씨
+     * @param destinationWeather 도착지 날씨
+     * @param bodyBuilder 알림 메시지 빌더
+     * @param data 알림 데이터
+     * @return 악천후 여부
+     */
+    private boolean checkAndHandleSevereWeather(Schedule schedule, WeatherResponse startWeather,
+                                                 WeatherResponse destinationWeather,
+                                                 StringBuilder bodyBuilder, Map<String, String> data) {
+        boolean isSevereStart = startWeather != null && weatherApiService.isSevereWeather(startWeather);
+        boolean isSevereDest = destinationWeather != null && weatherApiService.isSevereWeather(destinationWeather);
+
+        if (isSevereStart || isSevereDest) {
+            log.warn("⚠️ [ScheduleNotificationService] 악천후 감지 - Schedule ID: {}, 출발지 악천후: {}, 도착지 악천후: {}",
+                    schedule.getId(), isSevereStart, isSevereDest);
+
+            // 출발/도착 시간을 30분 앞당김
+            LocalDateTime originalStartTime = schedule.getStartTime();
+            LocalDateTime originalEndTime = schedule.getEndTime();
+            LocalDateTime newStartTime = originalStartTime.minusMinutes(30);
+            LocalDateTime newEndTime = originalEndTime.minusMinutes(30);
+
+            schedule.setStartTime(newStartTime);
+            schedule.setEndTime(newEndTime);
+            scheduleRepository.save(schedule);
+
+            log.info("🕐 [ScheduleNotificationService] 악천후로 인한 일정 시간 조정 완료 - Schedule ID: {}, " +
+                    "원래 시작: {} -> 변경: {}, 원래 종료: {} -> 변경: {}",
+                    schedule.getId(), originalStartTime, newStartTime, originalEndTime, newEndTime);
+
+            // 악천후 알림 추가
+            String weatherDesc = isSevereDest ?
+                    weatherApiService.getSevereWeatherDescription(destinationWeather) :
+                    weatherApiService.getSevereWeatherDescription(startWeather);
+
+            bodyBuilder.append(String.format("\n\n⚠️ 악천후 경보 (%s)!", weatherDesc));
+            bodyBuilder.append("\n날씨 때문에 늦을 수 있으니 출발 시간을 30분 앞당겼습니다.");
+            bodyBuilder.append(String.format("\n새로운 출발 시간: %s",
+                    newStartTime.toLocalTime().toString()));
+
+            // 악천후 알림을 별도로 FCM 전송 및 DB 저장
+            sendSevereWeatherNotification(schedule, schedule.getUser(), weatherDesc, newStartTime);
+
+            // 데이터에 악천후 정보 추가
+            data.put("isSevereWeather", "true");
+            data.put("severeWeatherDescription", weatherDesc);
+            data.put("originalStartTime", originalStartTime.toString());
+            data.put("newStartTime", newStartTime.toString());
+            data.put("originalEndTime", originalEndTime.toString());
+            data.put("newEndTime", newEndTime.toString());
+
+            return true;
+        }
+
+        data.put("isSevereWeather", "false");
+        return false;
+    }
+
+    /**
+     * 악천후 알림을 별도로 전송
+     */
+    private void sendSevereWeatherNotification(Schedule schedule, User user, String weatherDesc, LocalDateTime newStartTime) {
+        try {
+            String title = "⚠️ 악천후 알림";
+            String body = String.format("'%s' 일정에 악천후(%s)가 예상됩니다.\n" +
+                    "늦을 수 있으니 출발 시간을 30분 앞당겼습니다.\n" +
+                    "새로운 출발 시간: %s",
+                    schedule.getTitle(), weatherDesc, newStartTime.toLocalTime().toString());
+
+            Map<String, String> data = new HashMap<>();
+            data.put("scheduleId", schedule.getId().toString());
+            data.put("type", "SEVERE_WEATHER_ALERT");
+            data.put("weatherDescription", weatherDesc);
+            data.put("newStartTime", newStartTime.toString());
+
+            sendAndSaveNotification(user, title, body, data, schedule.getId(), "SEVERE_WEATHER_ALERT");
+
+            log.info("✅ [ScheduleNotificationService] 악천후 별도 알림 전송 완료 - User ID: {}, Schedule ID: {}",
+                    user.getId(), schedule.getId());
+
+        } catch (Exception e) {
+            log.error("❌ [ScheduleNotificationService] 악천후 알림 전송 실패 - User ID: {}, Schedule ID: {}, 에러: {}",
+                    user.getId(), schedule.getId(), e.getMessage(), e);
+        }
     }
 }

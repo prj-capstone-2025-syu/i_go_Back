@@ -47,7 +47,6 @@ public class MidpointController {
                 appUser.getId(), request.getLocations());
 
         try {
-            // [수정] 없어진 findMidpoint 대신, 새로운 서비스 메서드들을 조합하여 로직 구현
             // 1. 수학적 중간 좌표 계산
             Coordinates coords = midpointService.calculateGeometricMidpoint(request.getLocations());
 
