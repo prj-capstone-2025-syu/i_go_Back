@@ -591,8 +591,8 @@ public class ScheduleNotificationService {
             // 출발/도착 시간을 30분 앞당김
             LocalDateTime originalStartTime = schedule.getStartTime();
             LocalDateTime originalEndTime = schedule.getEndTime();
-            LocalDateTime newStartTime = originalStartTime.minusMinutes(30);
-            LocalDateTime newEndTime = originalEndTime.minusMinutes(30);
+            LocalDateTime newStartTime = originalStartTime.minusMinutes(20);
+            LocalDateTime newEndTime = originalEndTime.minusMinutes(20);
 
             schedule.setStartTime(newStartTime);
             schedule.setEndTime(newEndTime);
@@ -608,7 +608,7 @@ public class ScheduleNotificationService {
                     weatherApiService.getSevereWeatherDescription(startWeather);
 
             bodyBuilder.append(String.format("\n\n⚠️ 악천후 경보 (%s)!", weatherDesc));
-            bodyBuilder.append("\n날씨 때문에 늦을 수 있으니 출발 시간을 30분 앞당겼습니다.");
+            bodyBuilder.append("\n날씨 때문에 늦을 수 있으니 출발 시간을 20분 앞당겼습니다.");
             bodyBuilder.append(String.format("\n새로운 출발 시간: %s",
                     newStartTime.toLocalTime().toString()));
 
