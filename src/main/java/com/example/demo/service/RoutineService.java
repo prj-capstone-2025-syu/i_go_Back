@@ -8,6 +8,7 @@ import com.example.demo.repository.RoutineItemRepository;
 import com.example.demo.repository.RoutineRepository;
 import com.example.demo.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -15,6 +16,7 @@ import java.time.LocalDateTime;
 import java.util.*;
 import java.util.stream.Collectors;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 @Transactional
@@ -234,15 +236,37 @@ public class RoutineService {
                 .orElseThrow(() -> new IllegalArgumentException("루틴을 찾을 수 없습니다. ID: " + routineId));
 
         List<CalculatedRoutineItemTime> calculatedTimes = new ArrayList<>();
-        LocalDateTime currentItemStartTime = scheduleStartTime;
 
         // RoutineItem을 orderIndex 순으로 정렬
         List<RoutineItem> sortedItems = routine.getItems().stream()
                 .sorted(Comparator.comparingInt(RoutineItem::getOrderIndex))
                 .toList();
 
+        // 전체 루틴 소요 시간 계산
+        int totalRoutineDuration = sortedItems.stream()
+                .mapToInt(RoutineItem::getDurationMinutes)
+                .sum();
+
+        // 루틴 시작 시간 = 스케줄 시작 시간 - 전체 루틴 소요 시간
+        LocalDateTime routineStartTime = scheduleStartTime.minusMinutes(totalRoutineDuration);
+
+        log.info("🔍 [RoutineService] 루틴 시간 계산 시작");
+        log.info("   ├─ 루틴 ID: {}, 루틴 이름: '{}'", routineId, routine.getName());
+        log.info("   ├─ 스케줄 시작 시간: {}", scheduleStartTime);
+        log.info("   ├─ 전체 루틴 소요 시간: {}분", totalRoutineDuration);
+        log.info("   └─ 계산된 루틴 시작 시간: {}", routineStartTime);
+
+        LocalDateTime currentItemStartTime = routineStartTime;
+        int itemIndex = 0;
+
         for (RoutineItem item : sortedItems) {
             LocalDateTime itemEndTime = currentItemStartTime.plusMinutes(item.getDurationMinutes());
+
+            log.info("   🔹 아이템 #{}: '{}'", itemIndex + 1, item.getName());
+            log.info("      ├─ 시작 시간: {}", currentItemStartTime);
+            log.info("      ├─ 종료 시간: {}", itemEndTime);
+            log.info("      └─ 소요 시간: {}분", item.getDurationMinutes());
+
             calculatedTimes.add(new CalculatedRoutineItemTime(
                     item.getId(),
                     item.getName(),
@@ -252,7 +276,11 @@ public class RoutineService {
                     routine.getId()
             ));
             currentItemStartTime = itemEndTime; // 다음 아이템의 시작 시간은 현재 아이템의 종료 시간
+            itemIndex++;
         }
+
+        log.info("✅ [RoutineService] 루틴 시간 계산 완료 - 총 {}개 아이템", calculatedTimes.size());
+
         return calculatedTimes;
     }
 
@@ -276,5 +304,34 @@ public class RoutineService {
         }
 
         return null; // 해당하는 아이템이 없는 경우
+    }
+
+    /**
+     * 루틴 시작 시간 계산 (첫 번째 아이템의 시작 시간)
+     * @param routineId 루틴 ID
+     * @param scheduleStartTime 스케줄 시작 시간 (루틴 종료 시간)
+     * @return 루틴 시작 시간 (첫 번째 아이템의 시작 시간)
+     */
+    @Transactional(readOnly = true)
+    public LocalDateTime calculateRoutineStartTime(Long routineId, LocalDateTime scheduleStartTime) {
+        if (routineId == null || scheduleStartTime == null) {
+            return null;
+        }
+
+        try {
+            List<CalculatedRoutineItemTime> calculatedTimes = calculateRoutineItemTimes(routineId, scheduleStartTime);
+
+            if (!calculatedTimes.isEmpty()) {
+                LocalDateTime routineStartTime = calculatedTimes.get(0).getStartTime();
+                log.debug("루틴 시작 시간 계산 완료 - Routine ID: {}, 시작 시간: {}", routineId, routineStartTime);
+                return routineStartTime;
+            }
+
+            log.warn("루틴 아이템이 없습니다 - Routine ID: {}", routineId);
+            return null;
+        } catch (Exception e) {
+            log.error("루틴 시작 시간 계산 실패 - Routine ID: {}, 오류: {}", routineId, e.getMessage(), e);
+            return null;
+        }
     }
 }
