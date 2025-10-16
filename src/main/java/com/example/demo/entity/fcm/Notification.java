@@ -41,6 +41,8 @@ public class Notification {
 
     private Long relatedId; // 관련 엔티티의 ID (예: 스케줄 ID)
 
+    private Long scheduleId; // 스케줄 ID (루틴 아이템 알림 구분용)
+
     @Column(columnDefinition = "VARCHAR(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci")
     private String notificationType; // 알림 타입 (예: "SCHEDULE_START", "NEW_MESSAGE")
 

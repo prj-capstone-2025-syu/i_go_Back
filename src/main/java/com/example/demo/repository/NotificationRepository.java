@@ -18,6 +18,9 @@ public interface NotificationRepository extends JpaRepository<Notification, Long
     // 특정 사용자의 특정 관련 ID와 타입으로 알림이 존재하는지 확인하기 위한 메서드
     Optional<Notification> findByUserAndRelatedIdAndNotificationType(User user, Long relatedId, String notificationType);
 
+    // 루틴 아이템 알림 중복 체크 (스케줄 ID + 루틴 아이템 ID 조합)
+    Optional<Notification> findByUserAndScheduleIdAndRelatedIdAndNotificationType(User user, Long scheduleId, Long relatedId, String notificationType);
+
     // 사용자의 최근 알림을 Pageable을 사용하여 조회
     List<Notification> findByUserOrderByCreatedAtDesc(User user, Pageable pageable);
 
@@ -26,4 +29,3 @@ public interface NotificationRepository extends JpaRepository<Notification, Long
     @Query("DELETE FROM Notification n WHERE n.user.id = :userId")
     void deleteAllByUserId(@Param("userId") Long userId);
 }
-

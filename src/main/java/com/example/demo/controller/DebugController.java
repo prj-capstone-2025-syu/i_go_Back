@@ -1,7 +1,11 @@
 package com.example.demo.controller;
 
 import com.example.demo.entity.entityInterface.AppUser;
+import com.example.demo.entity.schedule.Schedule;
 import com.example.demo.entity.user.User;
+import com.example.demo.repository.ScheduleRepository;
+import com.example.demo.repository.UserRepository;
+import com.example.demo.service.FCMService;
 import com.example.demo.service.ScheduleNotificationService;
 import com.example.demo.service.ScheduleWeatherService;
 import lombok.RequiredArgsConstructor;
@@ -12,6 +16,7 @@ import org.springframework.web.bind.annotation.*;
 
 import java.time.LocalDateTime;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -26,6 +31,9 @@ public class DebugController {
 
     private final ScheduleNotificationService scheduleNotificationService;
     private final ScheduleWeatherService scheduleWeatherService;
+    private final FCMService fcmService;
+    private final ScheduleRepository scheduleRepository;
+    private final UserRepository userRepository;
 
     /**
      * 현재 시간에 알림 처리 로직을 수동으로 실행
@@ -200,5 +208,233 @@ public class DebugController {
         response.put("timestamp", LocalDateTime.now().toString());
 
         return ResponseEntity.ok(response);
+    }
+
+    /**
+     * 교통 지연 알림 강제 발생 (테스트용)
+     * 특정 일정에 대해 교통 지연 알림을 강제로 발생시킵니다.
+     */
+    @PostMapping("/force-traffic-delay")
+    public ResponseEntity<Map<String, Object>> forceTrafficDelayNotification(
+            @AuthenticationPrincipal AppUser appUser,
+            @RequestParam Long scheduleId,
+            @RequestParam(defaultValue = "30") int delayMinutes) {
+
+        log.info("🧪 [DebugController] 교통 지연 알림 강제 발생 - 사용자 ID: {}, 일정 ID: {}, 지연: {}분",
+                appUser.getId(), scheduleId, delayMinutes);
+
+        try {
+            Schedule schedule = scheduleRepository.findById(scheduleId)
+                    .orElseThrow(() -> new IllegalArgumentException("일정을 찾을 수 없습니다. ID: " + scheduleId));
+
+            if (!schedule.getUser().getId().equals(appUser.getId())) {
+                return ResponseEntity.status(403).body(Map.of(
+                        "success", false,
+                        "message", "해당 일정에 대한 권한이 없습니다."
+                ));
+            }
+
+            User user = userRepository.findById(appUser.getId())
+                    .orElseThrow(() -> new IllegalArgumentException("사용자를 찾을 수 없습니다."));
+
+            if (user.getFcmToken() == null || user.getFcmToken().isEmpty()) {
+                return ResponseEntity.status(400).body(Map.of(
+                        "success", false,
+                        "message", "FCM 토큰이 없습니다. 알림을 받을 수 없습니다."
+                ));
+            }
+
+            String originalTitle = schedule.getTitle();
+
+            // ScheduleNotificationService의 스케줄 조정 메서드 재사용
+            LocalDateTime originalStartTime = scheduleNotificationService.adjustScheduleForTrafficDelay(schedule, delayMinutes);
+
+            // ScheduleNotificationService의 알림 전송 메서드 재사용
+            scheduleNotificationService.sendTrafficDelayNotification(schedule, user, "테스트", delayMinutes);
+
+            Map<String, Object> response = new HashMap<>();
+            response.put("success", true);
+            response.put("message", "교통 체증 알림이 전송되었습니다.");
+            response.put("scheduleId", scheduleId);
+            response.put("delayMinutes", delayMinutes);
+            response.put("originalTitle", originalTitle);
+            response.put("newTitle", schedule.getTitle());
+            response.put("originalStartTime", originalStartTime.toString());
+            response.put("newStartTime", schedule.getStartTime().toString());
+            response.put("timeAdjusted", delayMinutes + "분 앞당김");
+            response.put("timestamp", LocalDateTime.now());
+
+            log.info("✅ [DebugController] 교통 체증 알림 전송 완료 - 일정 ID: {}, 시간 조정: {}분 앞당김", scheduleId, delayMinutes);
+            return ResponseEntity.ok(response);
+
+        } catch (Exception e) {
+            log.error("❌ [DebugController] 교통 지연 알림 전송 실패: {}", e.getMessage(), e);
+            return ResponseEntity.status(500).body(Map.of(
+                    "success", false,
+                    "message", "교통 지연 알림 전송 실패: " + e.getMessage()
+            ));
+        }
+    }
+
+    /**
+     * 비 알림 강제 발생 (테스트용)
+     * 특정 일정에 대해 비 오는 날씨 알림을 강제로 발생시킵니다.
+     */
+    @PostMapping("/force-rain-alert")
+    public ResponseEntity<Map<String, Object>> forceRainAlert(
+            @AuthenticationPrincipal AppUser appUser,
+            @RequestParam Long scheduleId) {
+
+        log.info("🧪 [DebugController] 비 알림 강제 발생 - 사용자 ID: {}, 일정 ID: {}",
+                appUser.getId(), scheduleId);
+
+        try {
+            Schedule schedule = scheduleRepository.findById(scheduleId)
+                    .orElseThrow(() -> new IllegalArgumentException("일정을 찾을 수 없습니다. ID: " + scheduleId));
+
+            if (!schedule.getUser().getId().equals(appUser.getId())) {
+                return ResponseEntity.status(403).body(Map.of(
+                        "success", false,
+                        "message", "해당 일정에 대한 권한이 없습니다."
+                ));
+            }
+
+            User user = userRepository.findById(appUser.getId())
+                    .orElseThrow(() -> new IllegalArgumentException("사용자를 찾을 수 없습니다."));
+
+            if (user.getFcmToken() == null || user.getFcmToken().isEmpty()) {
+                return ResponseEntity.status(400).body(Map.of(
+                        "success", false,
+                        "message", "FCM 토큰이 없습니다. 알림을 받을 수 없습니다."
+                ));
+            }
+
+            String originalTitle = schedule.getTitle();
+            String originalSupplies = schedule.getSupplies();
+
+            // ScheduleNotificationService의 스케줄 조정 메서드 재사용
+            LocalDateTime originalStartTime = scheduleNotificationService.adjustScheduleForWeather(schedule);
+
+            // ScheduleNotificationService의 알림 전송 메서드 재사용
+            scheduleNotificationService.sendWeatherAlertNotification(schedule, user, "비");
+
+            Map<String, Object> response = new HashMap<>();
+            response.put("success", true);
+            response.put("message", "비 알림이 전송되었습니다.");
+            response.put("scheduleId", scheduleId);
+            response.put("originalTitle", originalTitle);
+            response.put("newTitle", schedule.getTitle());
+            response.put("originalStartTime", originalStartTime.toString());
+            response.put("newStartTime", schedule.getStartTime().toString());
+            response.put("timeAdjusted", "15분 앞당김");
+            response.put("originalSupplies", originalSupplies);
+            response.put("newSupplies", schedule.getSupplies());
+            response.put("timestamp", LocalDateTime.now());
+
+            log.info("✅ [DebugController] 비 알림 전송 완료 - 일정 ID: {}, 시간 조정: 15분 앞당김, 우산 추가", scheduleId);
+            return ResponseEntity.ok(response);
+
+        } catch (Exception e) {
+            log.error("❌ [DebugController] 비 알림 전송 실패: {}", e.getMessage(), e);
+            return ResponseEntity.status(500).body(Map.of(
+                    "success", false,
+                    "message", "비 알림 전송 실패: " + e.getMessage()
+            ));
+        }
+    }
+
+    /**
+     * 사용자의 모든 일정 목록 조회 (테스트용)
+     */
+    @GetMapping("/my-schedules")
+    public ResponseEntity<Map<String, Object>> getMySchedules(
+            @AuthenticationPrincipal AppUser appUser) {
+
+        log.info("🧪 [DebugController] 일정 목록 조회 - 사용자 ID: {}", appUser.getId());
+
+        try {
+            LocalDateTime now = LocalDateTime.now();
+            LocalDateTime weekLater = now.plusDays(7);
+
+            List<Schedule> schedules = scheduleRepository.findByUserIdAndStartTimeBetween(
+                    appUser.getId(), now, weekLater);
+
+            Map<String, Object> response = new HashMap<>();
+            response.put("success", true);
+            response.put("count", schedules.size());
+            response.put("schedules", schedules.stream().map(s -> {
+                Map<String, Object> scheduleMap = new HashMap<>();
+                scheduleMap.put("id", s.getId());
+                scheduleMap.put("title", s.getTitle());
+                scheduleMap.put("startTime", s.getStartTime());
+                scheduleMap.put("endTime", s.getEndTime());
+                scheduleMap.put("location", s.getLocation());
+                scheduleMap.put("status", s.getStatus());
+                scheduleMap.put("hasCoordinates",
+                        s.getStartX() != null && s.getStartY() != null &&
+                                s.getDestinationX() != null && s.getDestinationY() != null);
+                return scheduleMap;
+            }).toList());
+            response.put("timestamp", LocalDateTime.now());
+
+            return ResponseEntity.ok(response);
+
+        } catch (Exception e) {
+            log.error("❌ [DebugController] 일정 목록 조회 실패: {}", e.getMessage(), e);
+            return ResponseEntity.status(500).body(Map.of(
+                    "success", false,
+                    "message", "일정 목록 조회 실패: " + e.getMessage()
+            ));
+        }
+    }
+
+    /**
+     * 일정 제목의 플래그 제거 (테스트 후 원복용)
+     */
+    @PostMapping("/remove-schedule-flag")
+    public ResponseEntity<Map<String, Object>> removeScheduleFlag(
+            @AuthenticationPrincipal AppUser appUser,
+            @RequestParam Long scheduleId) {
+
+        log.info("🧪 [DebugController] 일정 플래그 제거 - 사용자 ID: {}, 일정 ID: {}",
+                appUser.getId(), scheduleId);
+
+        try {
+            Schedule schedule = scheduleRepository.findById(scheduleId)
+                    .orElseThrow(() -> new IllegalArgumentException("일정을 찾을 수 없습니다. ID: " + scheduleId));
+
+            if (!schedule.getUser().getId().equals(appUser.getId())) {
+                return ResponseEntity.status(403).body(Map.of(
+                        "success", false,
+                        "message", "해당 일정에 대한 권한이 없습니다."
+                ));
+            }
+
+            String originalTitle = schedule.getTitle();
+            String newTitle = originalTitle
+                    .replace("[교통체증] ", "")
+                    .replace("[기상악화] ", "");
+
+            schedule.setTitle(newTitle);
+            scheduleRepository.save(schedule);
+
+            Map<String, Object> response = new HashMap<>();
+            response.put("success", true);
+            response.put("message", "일정 플래그가 제거되었습니다.");
+            response.put("scheduleId", scheduleId);
+            response.put("originalTitle", originalTitle);
+            response.put("newTitle", newTitle);
+            response.put("timestamp", LocalDateTime.now());
+
+            log.info("✅ [DebugController] 일정 플래그 제거 완료 - 일정 ID: {}", scheduleId);
+            return ResponseEntity.ok(response);
+
+        } catch (Exception e) {
+            log.error("❌ [DebugController] 일정 플래그 제거 실패: {}", e.getMessage(), e);
+            return ResponseEntity.status(500).body(Map.of(
+                    "success", false,
+                    "message", "일정 플래그 제거 실패: " + e.getMessage()
+            ));
+        }
     }
 }

@@ -55,6 +55,10 @@ public class Schedule {
 
     private String googleCalendarEventId;
 
+    // 원본 교통 시간 저장 (일정 생성 시점)
+    private Integer originalDrivingTime;    // 자차 원본 시간 (분)
+    private Integer originalTransitTime;    // 대중교통 원본 시간 (분)
+
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "user_id")
     @JsonIgnoreProperties({"hibernateLazyInitializer", "handler"})

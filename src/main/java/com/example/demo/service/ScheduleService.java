@@ -32,6 +32,7 @@ public class ScheduleService {
     private final UserRepository userRepository;
     private final RoutineService routineService;
     private final ScheduleNotificationService scheduleNotificationService;
+    private final TransportService transportService;
 
     // 루틴 기반 일정 생성 (종료 시간을 직접 받음)
     public Schedule createFromRoutine(Long userId, Long routineId, String title, LocalDateTime startTime,
@@ -56,6 +57,34 @@ public class ScheduleService {
             throw new IllegalArgumentException("종료 시간이 유효하지 않습니다. 종료 시간은 시작 시간보다 뒤여야 합니다.");
         }
 
+        // 교통 시간 계산 (좌표가 있는 경우에만)
+        Integer originalDrivingTime = null;
+        Integer originalTransitTime = null;
+
+        if (startX != null && startY != null && destinationX != null && destinationY != null) {
+            try {
+                com.example.demo.dto.transport.TransportTimeRequest transportRequest =
+                        new com.example.demo.dto.transport.TransportTimeRequest();
+                transportRequest.setStartX(startX);
+                transportRequest.setStartY(startY);
+                transportRequest.setEndX(destinationX);
+                transportRequest.setEndY(destinationY);
+                transportRequest.setRemoteEvent(false);
+
+                com.example.demo.dto.transport.TransportTimeResponse transportTimes =
+                        transportService.calculateAllTransportTimes(transportRequest);
+
+                originalDrivingTime = transportTimes.getDriving();
+                originalTransitTime = transportTimes.getTransit();
+
+                log.info("📊 [ScheduleService] 원본 교통 시간 저장 - Schedule: '{}', 자차: {}분, 대중교통: {}분",
+                        title, originalDrivingTime, originalTransitTime);
+            } catch (Exception e) {
+                log.error("❌ [ScheduleService] 교통 시간 계산 실패 - Schedule: '{}', 에러: {}",
+                        title, e.getMessage());
+            }
+        }
+
         Schedule schedule = Schedule.builder()
                 .title(title)
                 .startTime(startTime)
@@ -72,6 +101,8 @@ public class ScheduleService {
                 .supplies(supplies)
                 .user(user)
                 .status(Schedule.ScheduleStatus.PENDING)
+                .originalDrivingTime(originalDrivingTime)
+                .originalTransitTime(originalTransitTime)
                 .build();
 
         try {
@@ -84,29 +115,39 @@ public class ScheduleService {
 
         Schedule savedSchedule = scheduleRepository.save(schedule);
 
-        // 지연 등록 알림 처리
+        // 지연 등록 알림 처리 - 루틴 시작 시간 기준으로 체크
         LocalDateTime now = LocalDateTime.now();
-        if (startTime.isBefore(now)) {
-            log.info("🚨 [ScheduleService] 지연 등록 감지 - Schedule ID: {}, 계획 시작시간: {}, 현재시간: {}", 
-                    savedSchedule.getId(), startTime, now);
-            
-            String currentRoutineItemName = routineService.getCurrentRoutineItemName(routineId, startTime, now);
-            if (currentRoutineItemName != null) {
-                log.info("📱 [ScheduleService] 지연 등록 알림 전송 시작 - Schedule ID: {}, Current Item: {}, User ID: {}", 
-                        savedSchedule.getId(), currentRoutineItemName, user.getId());
-                
-                scheduleNotificationService.sendDelayedRoutineItemNotification(savedSchedule, user, currentRoutineItemName);
+        if (routineId != null) {
+            try {
+                // 루틴 시작 시간 계산 (루틴의 첫 번째 아이템 시작 시간)
+                LocalDateTime routineStartTime = routineService.calculateRoutineStartTime(routineId, startTime);
 
+                if (routineStartTime != null && routineStartTime.isBefore(now)) {
+                    log.info("🚨 [ScheduleService] 지연 등록 감지 - Schedule ID: {}, 루틴 시작시간: {}, 스케줄 시작시간: {}, 현재시간: {}",
+                            savedSchedule.getId(), routineStartTime, startTime, now);
 
-                log.info("✅ [ScheduleService] 지연 등록 알림 처리 완료 - Schedule ID: {}, Current Item: {}",
-                        savedSchedule.getId(), currentRoutineItemName);
-            } else {
-                log.info("⚠️ [ScheduleService] 지연 등록이지만 현재 시간에 해당하는 루틴 아이템 없음 - Schedule ID: {}", 
-                        savedSchedule.getId());
+                    String currentRoutineItemName = routineService.getCurrentRoutineItemName(routineId, startTime, now);
+                    if (currentRoutineItemName != null) {
+                        log.info("📱 [ScheduleService] 지연 등록 알림 전송 시작 - Schedule ID: {}, Current Item: '{}', User ID: {}",
+                                savedSchedule.getId(), currentRoutineItemName, user.getId());
+
+                        scheduleNotificationService.sendDelayedRoutineItemNotification(savedSchedule, user, currentRoutineItemName);
+
+                        log.info("✅ [ScheduleService] 지연 등록 알림 처리 완료 - Schedule ID: {}, Current Item: '{}'",
+                                savedSchedule.getId(), currentRoutineItemName);
+                    } else {
+                        log.info("⚠️ [ScheduleService] 지연 등록이지만 현재 시간에 해당하는 루틴 아이템 없음 - Schedule ID: {}",
+                                savedSchedule.getId());
+                    }
+                } else {
+                    log.info("⏰ [ScheduleService] 정상 등록 - Schedule ID: {}, 루틴 시작까지 남은 시간: {}분",
+                            savedSchedule.getId(),
+                            routineStartTime != null ? java.time.Duration.between(now, routineStartTime).toMinutes() : "N/A");
+                }
+            } catch (Exception e) {
+                log.error("❌ [ScheduleService] 지연 등록 알림 처리 중 오류 - Schedule ID: {}, 오류: {}",
+                        savedSchedule.getId(), e.getMessage(), e);
             }
-        } else {
-            log.info("⏰ [ScheduleService] 대상 등록 - Schedule ID: {}, 시작까지 남은 시간: {}분",
-                    savedSchedule.getId(), java.time.Duration.between(now, startTime).toMinutes());
         }
 
         return savedSchedule;
@@ -147,6 +188,40 @@ public class ScheduleService {
             throw new IllegalArgumentException("종료 시간이 유효하지 않습니다. 종료 시간은 시작 시간보다 뒤여야 합니다.");
         }
 
+        // 좌표 변경 여부 확인
+        boolean coordinatesChanged = false;
+        if ((startX != null && !startX.equals(schedule.getStartX())) ||
+            (startY != null && !startY.equals(schedule.getStartY())) ||
+            (destinationX != null && !destinationX.equals(schedule.getDestinationX())) ||
+            (destinationY != null && !destinationY.equals(schedule.getDestinationY()))) {
+            coordinatesChanged = true;
+        }
+
+        // 좌표가 변경되었으면 교통 시간 재계산
+        if (coordinatesChanged && startX != null && startY != null && destinationX != null && destinationY != null) {
+            try {
+                com.example.demo.dto.transport.TransportTimeRequest transportRequest =
+                        new com.example.demo.dto.transport.TransportTimeRequest();
+                transportRequest.setStartX(startX);
+                transportRequest.setStartY(startY);
+                transportRequest.setEndX(destinationX);
+                transportRequest.setEndY(destinationY);
+                transportRequest.setRemoteEvent(false);
+
+                com.example.demo.dto.transport.TransportTimeResponse transportTimes =
+                        transportService.calculateAllTransportTimes(transportRequest);
+
+                schedule.setOriginalDrivingTime(transportTimes.getDriving());
+                schedule.setOriginalTransitTime(transportTimes.getTransit());
+
+                log.info("📊 [ScheduleService] 일정 수정 - 교통 시간 재계산 완료 - Schedule ID: {}, 자차: {}분, 대중교통: {}분",
+                        scheduleId, transportTimes.getDriving(), transportTimes.getTransit());
+            } catch (Exception e) {
+                log.error("❌ [ScheduleService] 일정 수정 - 교통 시간 재계산 실패 - Schedule ID: {}, 에러: {}",
+                        scheduleId, e.getMessage());
+            }
+        }
+
         schedule.setTitle(title);
         schedule.setStartTime(startTime);
         schedule.setEndTime(endTime);
@@ -175,13 +250,24 @@ public class ScheduleService {
 
         Schedule savedSchedule = scheduleRepository.save(schedule);
 
-        // 지연 등록 알림 처리 (루틴이 새로 추가되었거나 변경된 경우)
+        // 지연 등록 알림 처리 (루틴이 새로 추가되었거나 변경된 경우) - 루틴 시작 시간 기준으로 체크
         LocalDateTime now = LocalDateTime.now();
-        if (routineId != null && !routineId.equals(previousRoutineId) && startTime.isBefore(now)) {
-            String currentRoutineItemName = routineService.getCurrentRoutineItemName(routineId, startTime, now);
-            if (currentRoutineItemName != null) {
-                scheduleNotificationService.sendDelayedRoutineItemNotification(savedSchedule, schedule.getUser(), currentRoutineItemName);
-                log.info("일�� 수정 시 지연 등록 알림 처리 완료 - Schedule ID: {}, Current Item: {}", savedSchedule.getId(), currentRoutineItemName);
+        if (routineId != null && !routineId.equals(previousRoutineId)) {
+            try {
+                // 루틴 시작 시간 계산 (루틴의 첫 번째 아이템 시작 시간)
+                LocalDateTime routineStartTime = routineService.calculateRoutineStartTime(routineId, startTime);
+
+                if (routineStartTime != null && routineStartTime.isBefore(now)) {
+                    String currentRoutineItemName = routineService.getCurrentRoutineItemName(routineId, startTime, now);
+                    if (currentRoutineItemName != null) {
+                        scheduleNotificationService.sendDelayedRoutineItemNotification(savedSchedule, schedule.getUser(), currentRoutineItemName);
+                        log.info("✅ 일정 수정 시 지연 등록 알림 처리 완료 - Schedule ID: {}, Current Item: '{}', 루틴 시작시간: {}",
+                                savedSchedule.getId(), currentRoutineItemName, routineStartTime);
+                    }
+                }
+            } catch (Exception e) {
+                log.error("❌ 일정 수정 시 지연 등록 알림 처리 중 오류 - Schedule ID: {}, 오류: {}",
+                        savedSchedule.getId(), e.getMessage(), e);
             }
         }
 
@@ -285,9 +371,77 @@ public class ScheduleService {
     @Transactional(readOnly = true)
     public Optional<Schedule> getLatestInProgressSchedule(Long userId) {
         LocalDateTime now = LocalDateTime.now();
-        List<Schedule> schedules = scheduleRepository.findLatestInProgressSchedulesByUserId(userId, now, PageRequest.of(0, 1));
-        return schedules.isEmpty() ? Optional.empty() : Optional.of(schedules.get(0));
+
+        // 기존 쿼리로 후보 일정들을 더 많이 가져옴 (루틴이 있는 경우를 대비)
+        List<Schedule> schedules = scheduleRepository.findLatestInProgressSchedulesByUserId(userId, now, PageRequest.of(0, 10));
+
+        if (schedules.isEmpty()) {
+            return Optional.empty();
+        }
+
+        // 루틴 시작 시간을 고려하여 실제 진행 중인 일정 필터링
+        for (Schedule schedule : schedules) {
+            LocalDateTime actualStartTime = schedule.getStartTime();
+
+            // 루틴이 있는 경우 루틴 시작 시간 계산
+            if (schedule.getRoutineId() != null) {
+                try {
+                    LocalDateTime routineStartTime = routineService.calculateRoutineStartTime(
+                            schedule.getRoutineId(), schedule.getStartTime());
+
+                    if (routineStartTime != null) {
+                        actualStartTime = routineStartTime;
+                        log.debug("[ScheduleService] 루틴이 있는 스케줄 - Schedule ID: {}, 루틴 시작: {}, 스케줄 시작: {}, 현재: {}",
+                                schedule.getId(), routineStartTime, schedule.getStartTime(), now);
+                    }
+                } catch (Exception e) {
+                    log.error("[ScheduleService] 루틴 시작 시간 계산 실패 - Schedule ID: {}, 오류: {}",
+                            schedule.getId(), e.getMessage());
+                    // 오류 발생 시 스케줄 시작 시간 사용
+                }
+            }
+
+            // 실제 진행 중인지 확인: 루틴/스케줄 시작 시간 <= 현재 시간 < 스케줄 종료 시간
+            if (!actualStartTime.isAfter(now) && schedule.getEndTime().isAfter(now)) {
+                log.info("[ScheduleService] 진행 중인 일정 발견 - Schedule ID: {}, Title: '{}', 시작: {}, 종료: {}",
+                        schedule.getId(), schedule.getTitle(), actualStartTime, schedule.getEndTime());
+                return Optional.of(schedule);
+            }
+        }
+
+        log.debug("[ScheduleService] 진행 중인 일정 없음 - User ID: {}, 현재: {}", userId, now);
+        return Optional.empty();
     }
+
+    /**
+     * 스케줄과 루틴 계산 정보를 함께 반환
+     */
+    public Map<String, Object> getScheduleWithRoutineInfo(Schedule schedule) {
+        if (schedule.getRoutineId() == null) {
+            return Map.of("schedule", schedule);
+        }
+
+        List<com.example.demo.dto.routine.CalculatedRoutineItemTime> calculatedItems =
+            routineService.calculateRoutineItemTimes(schedule.getRoutineId(), schedule.getStartTime());
+
+        if (calculatedItems.isEmpty()) {
+            return Map.of("schedule", schedule);
+        }
+
+        // 루틴 시작 시간 = 첫 번째 아이템 시작 시간
+        LocalDateTime routineStartTime = calculatedItems.get(0).getStartTime();
+
+        // 루틴 종료 시간 = 마지막 아이템 종료 시간
+        LocalDateTime routineEndTime = calculatedItems.get(calculatedItems.size() - 1).getEndTime();
+
+        return Map.of(
+            "schedule", schedule,
+            "routineStartTime", routineStartTime,
+            "routineEndTime", routineEndTime,
+            "routineItems", calculatedItems
+        );
+    }
+
 
     //Function_Call
     public List<Schedule> findSchedulesByArgs(Long userId, Map<String, Object> args) {

@@ -115,10 +115,20 @@ public class ScheduleController {
             return ResponseEntity.status(401).body(Map.of("message", "인증되지 않은 사용자입니다."));
         }
         Optional<Schedule> scheduleOpt = scheduleService.getLatestInProgressSchedule(appUser.getId());
-        // Optional이 비어있으면 null을, 아니면 Schedule 객체를 반환
-        // 클라이언트에서는 null을 통해 진행 중인 일정이 없음을 판단
-        return scheduleOpt.<ResponseEntity<?>>map(ResponseEntity::ok)
-                .orElseGet(() -> ResponseEntity.ok(null));
+
+        if (scheduleOpt.isEmpty()) {
+            return ResponseEntity.ok(null);
+        }
+
+        Schedule schedule = scheduleOpt.get();
+
+        // 루틴이 있는 경우 루틴 계산 정보 포함
+        if (schedule.getRoutineId() != null) {
+            return ResponseEntity.ok(scheduleService.getScheduleWithRoutineInfo(schedule));
+        }
+
+        // 루틴이 없는 경우 기존 Schedule 반환
+        return ResponseEntity.ok(schedule);
     }
 
     @PostMapping("/ai-function")
