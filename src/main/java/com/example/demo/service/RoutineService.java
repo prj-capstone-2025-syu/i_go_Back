@@ -236,7 +236,6 @@ public class RoutineService {
                 .orElseThrow(() -> new IllegalArgumentException("루틴을 찾을 수 없습니다. ID: " + routineId));
 
         List<CalculatedRoutineItemTime> calculatedTimes = new ArrayList<>();
-        LocalDateTime currentItemStartTime = scheduleStartTime;
 
         // RoutineItem을 orderIndex 순으로 정렬
         List<RoutineItem> sortedItems = routine.getItems().stream()

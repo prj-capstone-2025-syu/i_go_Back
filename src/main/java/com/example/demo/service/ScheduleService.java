@@ -371,8 +371,46 @@ public class ScheduleService {
     @Transactional(readOnly = true)
     public Optional<Schedule> getLatestInProgressSchedule(Long userId) {
         LocalDateTime now = LocalDateTime.now();
-        List<Schedule> schedules = scheduleRepository.findLatestInProgressSchedulesByUserId(userId, now, PageRequest.of(0, 1));
-        return schedules.isEmpty() ? Optional.empty() : Optional.of(schedules.get(0));
+
+        // 기존 쿼리로 후보 일정들을 더 많이 가져옴 (루틴이 있는 경우를 대비)
+        List<Schedule> schedules = scheduleRepository.findLatestInProgressSchedulesByUserId(userId, now, PageRequest.of(0, 10));
+
+        if (schedules.isEmpty()) {
+            return Optional.empty();
+        }
+
+        // 루틴 시작 시간을 고려하여 실제 진행 중인 일정 필터링
+        for (Schedule schedule : schedules) {
+            LocalDateTime actualStartTime = schedule.getStartTime();
+
+            // 루틴이 있는 경우 루틴 시작 시간 계산
+            if (schedule.getRoutineId() != null) {
+                try {
+                    LocalDateTime routineStartTime = routineService.calculateRoutineStartTime(
+                            schedule.getRoutineId(), schedule.getStartTime());
+
+                    if (routineStartTime != null) {
+                        actualStartTime = routineStartTime;
+                        log.debug("[ScheduleService] 루틴이 있는 스케줄 - Schedule ID: {}, 루틴 시작: {}, 스케줄 시작: {}, 현재: {}",
+                                schedule.getId(), routineStartTime, schedule.getStartTime(), now);
+                    }
+                } catch (Exception e) {
+                    log.error("[ScheduleService] 루틴 시작 시간 계산 실패 - Schedule ID: {}, 오류: {}",
+                            schedule.getId(), e.getMessage());
+                    // 오류 발생 시 스케줄 시작 시간 사용
+                }
+            }
+
+            // 실제 진행 중인지 확인: 루틴/스케줄 시작 시간 <= 현재 시간 < 스케줄 종료 시간
+            if (!actualStartTime.isAfter(now) && schedule.getEndTime().isAfter(now)) {
+                log.info("[ScheduleService] 진행 중인 일정 발견 - Schedule ID: {}, Title: '{}', 시작: {}, 종료: {}",
+                        schedule.getId(), schedule.getTitle(), actualStartTime, schedule.getEndTime());
+                return Optional.of(schedule);
+            }
+        }
+
+        log.debug("[ScheduleService] 진행 중인 일정 없음 - User ID: {}, 현재: {}", userId, now);
+        return Optional.empty();
     }
 
     /**

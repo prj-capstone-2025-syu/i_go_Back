@@ -274,11 +274,20 @@ public class ScheduleNotificationService {
             }
         }
 
+        // 모든 루틴 아이템이 완료되었는지 체크
         if (allItemsCompleted && !calculatedItems.isEmpty()) {
             CalculatedRoutineItemTime lastItem = calculatedItems.get(calculatedItems.size() - 1);
             if (lastItem.getEndTime().isBefore(now) || lastItem.getEndTime().isEqual(now)) {
-                log.info("   🏁 모든 루틴 아이템 완료 - 스케줄 완료 처리");
-                markScheduleAsCompleted(schedule);
+                log.info("   🏁 모든 루틴 아이템 완료");
+
+                // 스케줄의 실제 종료 시간을 확인하여 완료 처리
+                if (isScheduleCompleted(schedule, now)) {
+                    log.info("   ✅ 스케줄도 완료됨 - COMPLETED로 변경");
+                    markScheduleAsCompleted(schedule);
+                } else {
+                    log.info("   ⏳ 스케줄은 아직 진행 중 - IN_PROGRESS 유지");
+                    log.info("   └─ 스케줄 종료 시간: {}", schedule.getEndTime());
+                }
             }
         } else if (calculatedItems.isEmpty() && isScheduleCompleted(schedule, now)) {
             markScheduleAsCompleted(schedule);
@@ -713,7 +722,6 @@ public class ScheduleNotificationService {
                 data.put("weatherDescription", weatherDesc);
                 data.put("originalStartTime", originalStartTime.toString());
                 data.put("newStartTime", newStartTime.toString());
-                data.put("showModal", "true");
             } else {
                 log.info("✅ [ScheduleNotificationService] 날씨 양호 - Schedule ID: {}", schedule.getId());
                 data.put("hasSevereWeather", "false");
@@ -739,11 +747,13 @@ public class ScheduleNotificationService {
 
             Map<String, String> data = new HashMap<>();
             data.put("scheduleId", schedule.getId().toString());
-            data.put("type", "WEATHER_ALERT");
+            data.put("type", "SEVERE_WEATHER_ALERT");
             data.put("weatherDescription", weatherDescription);
-            data.put("showModal", "true");
+            data.put("severeWeatherDescription", weatherDescription);
+            data.put("newStartTime", schedule.getStartTime().toString());
+            data.put("originalStartTime", schedule.getStartTime().plusMinutes(15).toString());
 
-            sendAndSaveNotification(user, title, body, data, schedule.getId(), "WEATHER_ALERT");
+            sendAndSaveNotification(user, title, body, data, schedule.getId(), "SEVERE_WEATHER_ALERT");
 
             log.info("✅ [ScheduleNotificationService] 날씨 알림 전송 완료 - User ID: {}, Schedule ID: {}, 날씨: {}",
                     user.getId(), schedule.getId(), weatherDescription);
@@ -846,18 +856,15 @@ public class ScheduleNotificationService {
                 data.put("delayMinutes", String.valueOf(maxDelay));
                 data.put("originalStartTime", originalStartTime.toString());
                 data.put("newStartTime", newStartTime.toString());
-                data.put("showModal", "true"); // 프론트엔드에서 모달 표시하도록 플래그 전송
             } else {
                 log.info("✅ [ScheduleNotificationService] 교통 지연 없음 - Schedule ID: {}", schedule.getId());
                 data.put("hasTrafficDelay", "false");
-                data.put("showModal", "false");
             }
 
         } catch (Exception e) {
             log.error("❌ [ScheduleNotificationService] 교통 지연 체크 실패 - Schedule ID: {}, 에러: {}",
                     schedule.getId(), e.getMessage(), e);
             data.put("hasTrafficDelay", "false");
-            data.put("showModal", "false");
         }
     }
 
@@ -868,16 +875,18 @@ public class ScheduleNotificationService {
         try {
             String title = "🚦 교통 지연 알림";
             String body = String.format("'%s' 일정에 교통 지연이 예상됩니다.\n" +
-                    "%s 이동 시간이 평소보다 %d분 더 걸립니다.\n" +
+                    "이동 시간이 평소보다 %d분 더 걸립니다.\n" +
                     "일찍 출발하시는 것을 권장합니다!",
-                    schedule.getTitle(), delayType, delayMinutes);
+                    schedule.getTitle(), delayMinutes);
 
             Map<String, String> data = new HashMap<>();
             data.put("scheduleId", schedule.getId().toString());
             data.put("type", "TRAFFIC_DELAY_ALERT");
             data.put("delayType", delayType);
             data.put("delayMinutes", String.valueOf(delayMinutes));
-            data.put("showModal", "true"); // 프론트엔드 모달 표시 플래그
+            data.put("delayReason", delayType + " 교통 지연 (" + delayMinutes + "분)");
+            data.put("newStartTime", schedule.getStartTime().toString());
+            data.put("originalStartTime", schedule.getStartTime().plusMinutes(delayMinutes).toString());
 
             sendAndSaveNotification(user, title, body, data, schedule.getId(), "TRAFFIC_DELAY_ALERT");
 
@@ -904,3 +913,4 @@ public class ScheduleNotificationService {
         return request;
     }
 }
+//TODO : 비대면일시, 교통과 날씨 체크 안하도록(현재는 테스트용{좌표 넣기 귀찮아서}으로 비대면도 가능하게 함)
