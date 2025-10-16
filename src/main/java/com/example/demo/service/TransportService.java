@@ -267,8 +267,9 @@ public class TransportService {
 
     /**
      * 자차 이동시간 계산 (내부용 - 락 보호 하에서 호출)
+     * 외부에서도 호출 가능하도록 public으로 변경 (교통 지연 체크용)
      */
-    private Integer calculateDrivingTimeInternal(TransportTimeRequest request) {
+    public Integer calculateDrivingTimeInternal(TransportTimeRequest request) {
         try {
             String url = "https://apis.openapi.sk.com/tmap/routes?version=1&format=json";
 
