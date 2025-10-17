@@ -604,7 +604,12 @@ public class ScheduleNotificationService {
         try {
             String title = "루틴 시작 알림";
             StringBuilder bodyBuilder = new StringBuilder();
-            bodyBuilder.append(String.format("'%s' 루틴이 1시간 후 시작됩니다!", schedule.getTitle()));
+
+            // 현재 시간부터 스케줄 시작 시간까지 남은 시간 계산
+            LocalDateTime now = LocalDateTime.now().withSecond(0).withNano(0);
+            long minutesUntilScheduleStart = java.time.Duration.between(now, schedule.getStartTime()).toMinutes();
+
+            bodyBuilder.append(String.format("루틴 시작 1시간 전! 약속 시간까지 %d분 남았습니다.", minutesUntilScheduleStart));
 
             Map<String, String> data = new HashMap<>();
             data.put("scheduleId", schedule.getId().toString());
@@ -739,11 +744,8 @@ public class ScheduleNotificationService {
      */
     public void sendWeatherAlertNotification(Schedule schedule, User user, String weatherDescription) {
         try {
-            String title = "🌧️ 기상 악화 알림";
-            String body = String.format("'%s' 일정 시간에 %s이(가) 예상됩니다.\n" +
-                    "⏰ 출발 시간이 15분 앞당겨졌습니다!\n" +
-                    "☂️ 우산을 꼭 챙기세요!",
-                    schedule.getTitle(), weatherDescription);
+            String title = "날씨 알림";
+            String body = "날씨가 안좋아요!\n조금 일찍 나가볼까요?\n알람 시작 45분 전!";
 
             Map<String, String> data = new HashMap<>();
             data.put("scheduleId", schedule.getId().toString());
@@ -873,11 +875,8 @@ public class ScheduleNotificationService {
      */
     public void sendTrafficDelayNotification(Schedule schedule, User user, String delayType, int delayMinutes) {
         try {
-            String title = "🚦 교통 지연 알림";
-            String body = String.format("'%s' 일정에 교통 지연이 예상됩니다.\n" +
-                    "이동 시간이 평소보다 %d분 더 걸립니다.\n" +
-                    "일찍 출발하시는 것을 권장합니다!",
-                    schedule.getTitle(), delayMinutes);
+            String title = "교통 알림";
+            String body = String.format("교통 상황이 안 좋아요!\n조금 일찍 나가볼까요?\n알람 시작 %d분 전!", 60 - delayMinutes);
 
             Map<String, String> data = new HashMap<>();
             data.put("scheduleId", schedule.getId().toString());
