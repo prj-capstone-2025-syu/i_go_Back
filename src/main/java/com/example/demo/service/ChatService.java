@@ -43,7 +43,7 @@ public class ChatService {
     @Value("${openai.temperature}")
     private double temperature;
 
-    // 사용자별 대화 히스토리 저장 (Redis로 수정 예정)
+    // 사용자별 대화 히스토리 저장
     private final Map<Long, List<ChatMessage>> conversationHistory = new ConcurrentHashMap<>();
 
     public ChatResponse processMessage(ChatRequest request) {
@@ -1188,48 +1188,81 @@ public class ChatService {
      */
     private String extractCleanMessage(String aiResponse) {
         try {
-            // JSON 형태의 응답인지 확인
-            if (aiResponse.contains("{\"response\":")) {
-                Pattern pattern = Pattern.compile("\"response\":\\s*\"([^\"]+)\"");
+            // 1. {"response": "메시지"} 형태 처리
+            if (aiResponse.contains("\"response\"")) {
+                Pattern pattern = Pattern.compile("\"response\"\\s*:\\s*\"([^\"]+)\"");
                 Matcher matcher = pattern.matcher(aiResponse);
                 if (matcher.find()) {
                     return matcher.group(1);
                 }
             }
 
-            // RESPONSE: 형태의 응답인지 확인
+            // 2. RESPONSE: 메시지 형태 처리
             if (aiResponse.contains("RESPONSE:")) {
-                Pattern responsePattern = Pattern.compile("RESPONSE:\\s*(.+?)(?=\\n|$)");
+                Pattern responsePattern = Pattern.compile("RESPONSE:\\s*(.+?)(?=\\n(?:INTENT|SLOTS|ACTION)|$)", Pattern.DOTALL);
                 Matcher responseMatcher = responsePattern.matcher(aiResponse);
                 if (responseMatcher.find()) {
-                    return responseMatcher.group(1).trim();
+                    String message = responseMatcher.group(1).trim();
+                    // JSON 중괄호 제거
+                    message = message.replaceAll("^\\{|\\}$", "").trim();
+                    return message;
                 }
             }
 
-            // 다른 구조화된 응답 패턴들 제거
-            String cleaned = aiResponse;
+            // 3. 전체가 JSON 형태인 경우 처리
+            String trimmed = aiResponse.trim();
+            if (trimmed.startsWith("{") && trimmed.endsWith("}")) {
+                // response 필드만 추출
+                Pattern jsonPattern = Pattern.compile("\"response\"\\s*:\\s*\"([^\"]+)\"");
+                Matcher jsonMatcher = jsonPattern.matcher(trimmed);
+                if (jsonMatcher.find()) {
+                    return jsonMatcher.group(1);
+                }
 
-            // INTENT:, SLOTS: 등의 구조화된 부분 제거
-            cleaned = cleaned.replaceAll("INTENT:\\s*[A-Z_]+\\s*", "");
-            cleaned = cleaned.replaceAll("SLOTS:\\s*\\{[^}]*\\}\\s*", "");
-            cleaned = cleaned.replaceAll("ACTION:\\s*[^\\n]*\\s*", "");
-
-            // 중괄호로 둘러싸인 JSON 부분 제거
-            cleaned = cleaned.replaceAll("\\{[^}]*\\}", "");
-
-            // 앞뒤 공백 제거
-            cleaned = cleaned.trim();
-
-            // 빈 문자열이면 원본 응답 반환
-            if (cleaned.isEmpty()) {
-                return aiResponse;
+                // message 필드 추출 시도
+                Pattern msgPattern = Pattern.compile("\"message\"\\s*:\\s*\"([^\"]+)\"");
+                Matcher msgMatcher = msgPattern.matcher(trimmed);
+                if (msgMatcher.find()) {
+                    return msgMatcher.group(1);
+                }
             }
 
-            return cleaned;
+            // 4. 다른 구조화된 응답 패턴들 제거
+            String cleaned = aiResponse;
+
+            // INTENT:, SLOTS:, ACTION: 등의 구조화된 부분 제거
+            cleaned = cleaned.replaceAll("INTENT:\\s*[A-Z_]+\\s*\n?", "");
+            cleaned = cleaned.replaceAll("SLOTS:\\s*\\{[^}]*\\}\\s*\n?", "");
+            cleaned = cleaned.replaceAll("ACTION:\\s*[^\\n]*\\s*\n?", "");
+
+            // 남은 중괄호 제거
+            cleaned = cleaned.replaceAll("^\\s*\\{\\s*", "");
+            cleaned = cleaned.replaceAll("\\s*\\}\\s*$", "");
+
+            // 앞뒤 공백 및 개행 정리
+            cleaned = cleaned.trim();
+
+            // 빈 문자열이 아니면 정리된 메시지 반환
+            if (!cleaned.isEmpty() && !cleaned.equals(aiResponse.trim())) {
+                return cleaned;
+            }
+
+            // 원본 응답에서 마지막으로 따옴표 안의 텍스트 추출 시도
+            Pattern lastQuotePattern = Pattern.compile("\"([^\"]+)\"[^\"]*$");
+            Matcher lastQuoteMatcher = lastQuotePattern.matcher(aiResponse);
+            if (lastQuoteMatcher.find()) {
+                String extracted = lastQuoteMatcher.group(1);
+                // 필드명이 아닌 실제 메시지인지 확인
+                if (!extracted.matches("response|message|intent|action|slots|title|datetime|location|memo|supplies")) {
+                    return extracted;
+                }
+            }
+
+            return aiResponse.trim();
 
         } catch (Exception e) {
             log.warn("Error extracting clean message from AI response: {}", e.getMessage());
-            return aiResponse;
+            return aiResponse.trim();
         }
     }
 }
