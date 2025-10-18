@@ -32,6 +32,7 @@ public class FCMService {
                     .putAllData(dataOnly)
                     .setToken(token)
                     .setAndroidConfig(AndroidConfig.builder()
+                            .setTtl(60000) // 1분 (밀리초 단위)
                             .setNotification(AndroidNotification.builder()
                                     .setTitle(encodedTitle)
                                     .setBody(encodedBody)
@@ -44,6 +45,7 @@ public class FCMService {
                             .build())
                     .setApnsConfig(ApnsConfig.builder()
                             .putHeader("apns-priority", "10")
+                            .putHeader("apns-expiration", String.valueOf(System.currentTimeMillis() / 1000 + 60)) // 1분 후 만료 (초 단위 Unix timestamp)
                             .setAps(Aps.builder()
                                     .setAlert(ApsAlert.builder()
                                             .setTitle(encodedTitle)
@@ -55,6 +57,7 @@ public class FCMService {
                             .build())
                     .setWebpushConfig(WebpushConfig.builder()
                             .putHeader("Urgency", "high")
+                            .putHeader("TTL", "60") // 1분 (초 단위)
                             .setNotification(WebpushNotification.builder()
                                     .setTitle(encodedTitle)
                                     .setBody(encodedBody)
@@ -205,4 +208,3 @@ public class FCMService {
         }
     }
 }
-
