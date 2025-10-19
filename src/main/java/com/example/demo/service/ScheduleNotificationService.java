@@ -367,24 +367,21 @@ public class ScheduleNotificationService {
 
     // 알림 전송 및 DB 저장
     private void sendAndSaveNotification(User user, String title, String body, Map<String, String> data, Long relatedId, String notificationType) {
-        try {
-            if (user.getFcmToken() == null || user.getFcmToken().isEmpty()) {
-                log.warn("{} 알림 전송 시도: 사용자 ID {}의 FCM 토큰이 없습니다.", notificationType, user.getId());
-                return;
-            }
+        Notification savedNotification = null;
 
-            // 동시성 제어: 알림 전송 전에 다시 한번 중복 확인
+        try {
+            // DB에 먼저 저장 (동시성 제어)
             synchronized (this) {
                 Optional<Notification> existingCheck = notificationRepository
                         .findByUserAndRelatedIdAndNotificationType(user, relatedId, notificationType);
 
                 if (existingCheck.isPresent()) {
-                    log.info("중복 알림 방지: 이미 존재하는 알림 - 사용자 ID: {}, 관련 ID: {}, 타입: {}",
+                    log.info("💾 [ScheduleNotificationService] 중복 알림 방지 - 이미 존재하는 알림 (사용자: {}, 관련ID: {}, 타입: {})",
                             user.getId(), relatedId, notificationType);
                     return;
                 }
 
-                // DB에 먼저 저장
+                // DB에 저장
                 Notification notification = Notification.builder()
                         .user(user)
                         .title(title)
@@ -392,16 +389,23 @@ public class ScheduleNotificationService {
                         .relatedId(relatedId)
                         .notificationType(notificationType)
                         .build();
-                notificationRepository.save(notification);
-                log.info("{} 알림 DB 저장 완료: 알림 ID {}", notificationType, notification.getId());
+                savedNotification = notificationRepository.save(notification);
+                log.info("💾 [ScheduleNotificationService] {} 알림 DB 저장 완료 - 알림ID: {}, 사용자: {}, 관련ID: {}",
+                        notificationType, savedNotification.getId(), user.getId(), relatedId);
+            }
 
-                // FCM 전송
-                fcmService.sendMessageToToken(user.getFcmToken(), title, body, data);
-                log.info("{} 알림 전송 성공: 사용자 ID {}, 관련 ID {}", notificationType, user.getId(), relatedId);
+            // DB 저장 후 FCM 또는 WebSocket으로 전송 (저장과 분리)
+            try {
+                fcmService.sendNotificationToUser(user.getId().toString(), user.getFcmToken(), title, body, data);
+                log.info("📤 [ScheduleNotificationService] {} 알림 전송 성공 - 사용자: {}, 관련ID: {}",
+                        notificationType, user.getId(), relatedId);
+            } catch (Exception e) {
+                log.error("❌ [ScheduleNotificationService] {} 알림 전송 실패 (DB는 저장됨) - 사용자: {}, 관련ID: {}, 오류: {}",
+                        notificationType, user.getId(), relatedId, e.getMessage(), e);
             }
 
         } catch (Exception e) {
-            log.error("{} 알림 전송/저장 실패: 사용자 ID {}, 관련 ID {}. 오류: {}",
+            log.error("❌ [ScheduleNotificationService] {} 알림 저장 실패 - 사용자: {}, 관련ID: {}, 오류: {}",
                     notificationType, user.getId(), relatedId, e.getMessage(), e);
         }
     }
@@ -409,25 +413,22 @@ public class ScheduleNotificationService {
     // 루틴 아이템 전용 알림 전송 (scheduleId 포함)
     private void sendRoutineItemNotification(User user, Schedule schedule, String title, String body,
                                             Map<String, String> data, Long routineItemId) {
-        try {
-            if (user.getFcmToken() == null || user.getFcmToken().isEmpty()) {
-                log.warn("루틴 아이템 알림 전송 시도: 사용자 ID {}의 FCM 토큰이 없습니다.", user.getId());
-                return;
-            }
+        Notification savedNotification = null;
 
-            // 동시성 제어: 알림 전송 전에 다시 한번 중복 확인
+        try {
+            // DB에 먼저 저장 (scheduleId 포함, 동시성 제어)
             synchronized (this) {
                 Optional<Notification> existingCheck = notificationRepository
                         .findByUserAndScheduleIdAndRelatedIdAndNotificationType(
                                 user, schedule.getId(), routineItemId, NOTIFICATION_TYPE_ROUTINE_ITEM_START);
 
                 if (existingCheck.isPresent()) {
-                    log.info("중복 알림 방지: 이미 존재하는 루틴 아이템 알림 - 사용자 ID: {}, 스케줄 ID: {}, 루틴 아이템 ID: {}",
+                    log.info("💾 [ScheduleNotificationService] 중복 알림 방지 - 이미 존재하는 루틴 아이템 알림 (사용자: {}, 스케줄: {}, 아이템: {})",
                             user.getId(), schedule.getId(), routineItemId);
                     return;
                 }
 
-                // DB에 먼저 저장 (scheduleId 포함)
+                // DB에 저장
                 Notification notification = Notification.builder()
                         .user(user)
                         .title(title)
@@ -436,28 +437,30 @@ public class ScheduleNotificationService {
                         .scheduleId(schedule.getId())
                         .notificationType(NOTIFICATION_TYPE_ROUTINE_ITEM_START)
                         .build();
-                notificationRepository.save(notification);
-                log.info("루틴 아이템 알림 DB 저장 완료: 알림 ID {}, 스케줄 ID: {}, 루틴 아이템 ID: {}",
-                        notification.getId(), schedule.getId(), routineItemId);
+                savedNotification = notificationRepository.save(notification);
+                log.info("💾 [ScheduleNotificationService] 루틴 아이템 알림 DB 저장 완료 - 알림ID: {}, 스케줄: {}, 아이템: {}",
+                        savedNotification.getId(), schedule.getId(), routineItemId);
+            }
 
-                // FCM 전송
-                fcmService.sendMessageToToken(user.getFcmToken(), title, body, data);
-                log.info("루틴 아이템 알림 전송 성공: 사용자 ID {}, 스케줄 ID: {}, 루틴 아이템 ID: {}",
+            // DB 저장 후 FCM 또는 WebSocket으로 전송 (저장과 분리)
+            try {
+                fcmService.sendNotificationToUser(user.getId().toString(), user.getFcmToken(), title, body, data);
+                log.info("📤 [ScheduleNotificationService] 루틴 아이템 알림 전송 성공 - 사용자: {}, 스케줄: {}, 아이템: {}",
                         user.getId(), schedule.getId(), routineItemId);
+            } catch (Exception e) {
+                log.error("❌ [ScheduleNotificationService] 루틴 아이템 알림 전송 실패 (DB는 저장됨) - 사용자: {}, 스케줄: {}, 아이템: {}, 오류: {}",
+                        user.getId(), schedule.getId(), routineItemId, e.getMessage(), e);
             }
 
         } catch (Exception e) {
-            log.error("루틴 아이템 알림 전송/저장 실패: 사용자 ID {}, 스케줄 ID: {}, 루틴 아이템 ID: {}. 오류: {}",
+            log.error("❌ [ScheduleNotificationService] 루틴 아이템 알림 저장 실패 - 사용자: {}, 스케줄: {}, 아이템: {}, 오류: {}",
                     user.getId(), schedule.getId(), routineItemId, e.getMessage(), e);
         }
     }
 
-    // 사용자 검증
+    // 사용자 검증 - FCM 토큰이 없어도 알림 활성화되어 있으면 유효
     private boolean isValidNotificationUser(User user) {
-        return user != null &&
-               user.getFcmToken() != null &&
-               !user.getFcmToken().isEmpty() &&
-               user.isNotificationsEnabled();
+        return user != null && user.isNotificationsEnabled();
     }
 
     // 스케줄이 완료되었는지 확인
@@ -487,13 +490,9 @@ public class ScheduleNotificationService {
      * @param routineItemName 현재 시간에 해당하는 루틴 아이템 이름
      */
     public void sendDelayedRoutineItemNotification(Schedule schedule, User user, String routineItemName) {
-        try {
-            String fcmToken = user.getFcmToken();
-            if (fcmToken == null || fcmToken.isEmpty()) {
-                log.warn("사용자 FCM 토큰이 없습니다. User ID: {}", user.getId());
-                return;
-            }
+        Notification savedNotification = null;
 
+        try {
             String title = "늦은 일정 등록";
             String body = String.format("이미 시작 시간이 지났는데, '%s'을(를) 완료하셨나요?", routineItemName);
 
@@ -502,6 +501,7 @@ public class ScheduleNotificationService {
             data.put("routineItemName", routineItemName);
             data.put("type", "delayed_routine_item");
 
+            // DB에 먼저 저장
             Notification notification = Notification.builder()
                     .user(user)
                     .title(title)
@@ -510,14 +510,23 @@ public class ScheduleNotificationService {
                     .notificationType("delayed_routine_item")
                     .build();
 
-            fcmService.sendMessageToToken(fcmToken, title, body, data);
-            notificationRepository.save(notification);
-            log.info("지연 루틴 아이템 알림 전송 완료 - User ID: {}, Schedule ID: {}, Item: {}",
-                    user.getId(), schedule.getId(), routineItemName);
+            savedNotification = notificationRepository.save(notification);
+            log.info("💾 [ScheduleNotificationService] 지연 루틴 아이템 알림 DB 저장 완료 - 알림ID: {}, User: {}, Schedule: {}, Item: {}",
+                    savedNotification.getId(), user.getId(), schedule.getId(), routineItemName);
+
+            // DB 저장 후 FCM 또는 WebSocket으로 전송 (저장과 분리)
+            try {
+                fcmService.sendNotificationToUser(user.getId().toString(), user.getFcmToken(), title, body, data);
+                log.info("📤 [ScheduleNotificationService] 지연 루틴 아이템 알림 전송 완료 - User: {}, Schedule: {}, Item: {}",
+                        user.getId(), schedule.getId(), routineItemName);
+            } catch (Exception e) {
+                log.error("❌ [ScheduleNotificationService] 지연 루틴 아이템 알림 전송 실패 (DB는 저장됨) - User: {}, Schedule: {}, Item: {}, 오류: {}",
+                        user.getId(), schedule.getId(), routineItemName, e.getMessage(), e);
+            }
 
         } catch (Exception e) {
-            log.error("지연 루틴 아이템 알림 전송 실패 - User ID: {}, Schedule ID: {}, Item: {}",
-                    user.getId(), schedule.getId(), routineItemName, e);
+            log.error("❌ [ScheduleNotificationService] 지연 루틴 아이템 알림 저장 실패 - User: {}, Schedule: {}, Item: {}, 오류: {}",
+                    user.getId(), schedule.getId(), routineItemName, e.getMessage(), e);
         }
     }
 

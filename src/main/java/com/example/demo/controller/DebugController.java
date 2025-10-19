@@ -3,6 +3,7 @@ package com.example.demo.controller;
 import com.example.demo.entity.entityInterface.AppUser;
 import com.example.demo.entity.schedule.Schedule;
 import com.example.demo.entity.user.User;
+import com.example.demo.handler.NotificationWebSocketHandler;
 import com.example.demo.repository.ScheduleRepository;
 import com.example.demo.repository.UserRepository;
 import com.example.demo.service.FCMService;
@@ -34,6 +35,7 @@ public class DebugController {
     private final FCMService fcmService;
     private final ScheduleRepository scheduleRepository;
     private final UserRepository userRepository;
+    private final NotificationWebSocketHandler webSocketHandler;
 
     /**
      * 현재 시간에 알림 처리 로직을 수동으로 실행
@@ -434,6 +436,114 @@ public class DebugController {
             return ResponseEntity.status(500).body(Map.of(
                     "success", false,
                     "message", "일정 플래그 제거 실패: " + e.getMessage()
+            ));
+        }
+    }
+
+    /**
+     * WebSocket으로 테스트 알림 전송 (테스트용)
+     * 현재 로그인한 사용자에게 WebSocket을 통해 테스트 알림을 전송합니다.
+     */
+    @PostMapping("/send-websocket-notification")
+    public ResponseEntity<Map<String, Object>> sendWebSocketNotification(
+            @AuthenticationPrincipal AppUser appUser,
+            @RequestParam(defaultValue = "GENERIC") String type,
+            @RequestParam(defaultValue = "테스트 알림") String title,
+            @RequestParam(defaultValue = "WebSocket 테스트 메시지입니다.") String body) {
+
+        log.info("🧪 [DebugController] WebSocket 알림 전송 테스트 - 사용자 ID: {}, 타입: {}", 
+                appUser.getId(), type);
+
+        try {
+            // User 엔티티에서 이메일 가져오기
+            User user = userRepository.findById(appUser.getId())
+                    .orElseThrow(() -> new IllegalArgumentException("사용자를 찾을 수 없습니다."));
+            String userEmail = user.getEmail();
+            
+            // WebSocket 연결 여부 확인 (이메일로)
+            boolean isConnected = webSocketHandler.isUserConnected(userEmail);
+            
+            if (!isConnected) {
+                log.warn("⚠️ [DebugController] 사용자의 WebSocket이 연결되어 있지 않습니다 - userEmail: {}", userEmail);
+                return ResponseEntity.status(400).body(Map.of(
+                        "success", false,
+                        "message", "WebSocket이 연결되어 있지 않습니다. 먼저 WebSocket을 연결해주세요.",
+                        "isConnected", false,
+                        "userEmail", userEmail,
+                        "activeConnections", webSocketHandler.getActiveConnectionCount()
+                ));
+            }
+
+            // 알림 데이터 구성
+            Map<String, String> notificationData = new HashMap<>();
+            notificationData.put("type", type);
+            notificationData.put("title", title);
+            notificationData.put("body", body);
+            notificationData.put("timestamp", LocalDateTime.now().toString());
+            notificationData.put("scheduleId", "999"); // 테스트용 더미 ID
+
+            // WebSocket을 통해 알림 전송 (이메일로)
+            webSocketHandler.sendNotificationToUser(userEmail, notificationData);
+
+            Map<String, Object> response = new HashMap<>();
+            response.put("success", true);
+            response.put("message", "WebSocket 알림이 전송되었습니다.");
+            response.put("userId", appUser.getId());
+            response.put("userEmail", userEmail);
+            response.put("type", type);
+            response.put("title", title);
+            response.put("body", body);
+            response.put("isConnected", true);
+            response.put("activeConnections", webSocketHandler.getActiveConnectionCount());
+            response.put("timestamp", LocalDateTime.now());
+
+            log.info("✅ [DebugController] WebSocket 알림 전송 완료 - userEmail: {}", userEmail);
+            return ResponseEntity.ok(response);
+
+        } catch (Exception e) {
+            log.error("❌ [DebugController] WebSocket 알림 전송 실패: {}", e.getMessage(), e);
+            return ResponseEntity.status(500).body(Map.of(
+                    "success", false,
+                    "message", "WebSocket 알림 전송 실패: " + e.getMessage()
+            ));
+        }
+    }
+
+    /**
+     * WebSocket 연결 상태 확인 (테스트용)
+     */
+    @GetMapping("/websocket-status")
+    public ResponseEntity<Map<String, Object>> getWebSocketStatus(
+            @AuthenticationPrincipal AppUser appUser) {
+
+        log.info("🧪 [DebugController] WebSocket 상태 확인 - 사용자 ID: {}", appUser.getId());
+
+        try {
+            // User 엔티티에서 이메일 가져오기
+            User user = userRepository.findById(appUser.getId())
+                    .orElseThrow(() -> new IllegalArgumentException("사용자를 찾을 수 없습니다."));
+            String userEmail = user.getEmail();
+            
+            boolean isConnected = webSocketHandler.isUserConnected(userEmail);
+            int activeConnections = webSocketHandler.getActiveConnectionCount();
+
+            Map<String, Object> response = new HashMap<>();
+            response.put("success", true);
+            response.put("userId", appUser.getId());
+            response.put("userEmail", userEmail);
+            response.put("isConnected", isConnected);
+            response.put("activeConnections", activeConnections);
+            response.put("timestamp", LocalDateTime.now());
+
+            log.info("✅ [DebugController] WebSocket 상태 - userEmail: {}, 연결됨: {}, 전체 연결 수: {}", 
+                    userEmail, isConnected, activeConnections);
+            return ResponseEntity.ok(response);
+
+        } catch (Exception e) {
+            log.error("❌ [DebugController] WebSocket 상태 확인 실패: {}", e.getMessage(), e);
+            return ResponseEntity.status(500).body(Map.of(
+                    "success", false,
+                    "message", "WebSocket 상태 확인 실패: " + e.getMessage()
             ));
         }
     }
