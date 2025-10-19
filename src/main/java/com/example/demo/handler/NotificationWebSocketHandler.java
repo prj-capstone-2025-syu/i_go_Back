@@ -50,8 +50,14 @@ public class NotificationWebSocketHandler extends TextWebSocketHandler {
 
     @Override
     protected void handleTextMessage(WebSocketSession session, TextMessage message) throws Exception {
-        // 클라이언트로부터 메시지를 받았을 때 처리 (필요시 구현)
-        log.debug("📨 [WebSocket] 클라이언트 메시지 수신: {}", message.getPayload());
+        // 클라이언트로부터 메시지를 받았을 때 처리 (핑)
+        String payload = message.getPayload();
+        log.debug("📨 [WebSocket] 클라이언트 메시지 수신: {}", payload);
+
+        // PING 메시지에 PONG 응답
+        if ("PING".equals(payload)) {
+            sendMessage(session, Map.of("type", "PONG"));
+        }
     }
 
     @Override
