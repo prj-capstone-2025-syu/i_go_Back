@@ -21,6 +21,6 @@ public class WebSocketConfig implements WebSocketConfigurer {
     @Override
     public void registerWebSocketHandlers(WebSocketHandlerRegistry registry) {
         registry.addHandler(notificationWebSocketHandler, "/ws/notifications")
-                .setAllowedOrigins(allowedOrigins); // 환경 변수로 관리되는 CORS 설정
+                .setAllowedOrigins(allowedOrigins);
     }
 }
