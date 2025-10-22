@@ -11,6 +11,8 @@ import org.springframework.web.util.UriComponentsBuilder;
 
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
+import java.util.Arrays;
+import java.util.List;
 
 @Slf4j
 @Service
@@ -22,7 +24,41 @@ public class GeocodingService {
     @Value("${google.maps.api.key}")
     private String googleMapsApiKey;
 
+    // 주소 검색을 건너뛰어야 하는 키워드 목록
+    private static final List<String> SKIP_KEYWORDS = Arrays.asList(
+        "비대면", "화상회의", "화상", "온라인", "줌", "zoom", "미팅", "meeting",
+        "구글미트", "google meet", "teams", "webex", "skype"
+    );
+
     public Coordinates getCoordinates(String address) {
+        // 비대면/온라인 관련 키워드가 포함된 경우 주소 검색 건너뛰기
+        if (shouldSkipGeocoding(address)) {
+            log.info("비대면/온라인 키워드 감지. 주소 검색 건너뜀: {}", address);
+            return null;
+        }
+
+        return getCoordinatesInternal(address, 0);
+    }
+
+    private boolean shouldSkipGeocoding(String address) {
+        String lowerAddress = address.toLowerCase();
+        return SKIP_KEYWORDS.stream()
+                .anyMatch(keyword -> lowerAddress.contains(keyword.toLowerCase()));
+    }
+
+    private Coordinates getCoordinatesInternal(String address, int retryCount) {
+        // 재귀 깊이 제한 (무한 반복 방지)
+        if (retryCount >= 3) {
+            log.warn("주소 검색 재시도 횟수 초과: {}", address);
+            return null;
+        }
+
+        // "주변"이 2번 이상 반복되면 중단
+        if (address.split("주변").length > 3) {
+            log.warn("주소에 '주변'이 과도하게 포함되어 검색 중단: {}", address);
+            return null;
+        }
+
         try {
             // UriComponentsBuilder를 사용하여 자동 인코딩 (이중 인코딩 방지)
             URI uri = UriComponentsBuilder.fromHttpUrl("https://maps.googleapis.com/maps/api/geocode/json")
@@ -52,8 +88,11 @@ public class GeocodingService {
                 // 주소를 찾을 수 없는 경우 대체 검색어로 재시도
                 String[] alternatives = generateAlternativeSearchTerms(address);
                 for (String alternative : alternatives) {
-                    log.info("주소 검색 실패. 대체 검색어로 재시도: {}", alternative);
-                    Coordinates coords = getCoordinates(alternative);
+                    if (alternative.equals(address)) {
+                        continue; // 동일한 주소는 건너뛰기
+                    }
+                    log.info("주소 검색 실패. 대체 검색어로 재시도 ({}/3): {}", retryCount + 1, alternative);
+                    Coordinates coords = getCoordinatesInternal(alternative, retryCount + 1);
                     if (coords != null) {
                         return coords;
                     }
@@ -81,13 +120,18 @@ public class GeocodingService {
         if (address.contains("시") || address.contains("구") || address.contains("동")) {
             return new String[]{
                 address.replaceAll("\\s+", ""), // 공백 제거
-                address + " 일대",
-                address + " 중심"
+                address + " 일대"
+            };
+        }
+
+        // "주변"이 이미 포함되어 있으면 추가하지 않음
+        if (address.contains("주변")) {
+            return new String[]{
+                address.replaceAll("\\s+", "") // 공백 제거만 수행
             };
         }
 
         return new String[]{
-            address + " 주변",
             address.replaceAll("\\s+", "") // 공백 제거
         };
     }
