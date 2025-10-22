@@ -454,12 +454,46 @@ public class ChatService {
             log.debug("Handling CREATE_SCHEDULE with slots: {}", slots);
 
             CreateScheduleRequest scheduleRequest = new CreateScheduleRequest();
+            Long routineId = null;
+
             if (slots != null) {
                 scheduleRequest.setTitle((String) slots.get("title"));
 
-                // location 필드 처리 및 좌표 변환
+                // startLocation 필드 별도 처리 (AI가 직접 추출한 경우)
+                String startLocationFromSlots = (String) slots.get("startLocation");
                 String locationInfo = (String) slots.get("location");
-                if (locationInfo != null && !locationInfo.trim().isEmpty()) {
+
+                if (startLocationFromSlots != null && !startLocationFromSlots.trim().isEmpty()) {
+                    // startLocation이 별도로 제공된 경우
+                    log.info("✅ startLocation 필드 발견: '{}'", startLocationFromSlots);
+
+                    // 출발지 좌표 변환
+                    var startCoords = geocodingService.getCoordinates(startLocationFromSlots);
+                    if (startCoords != null) {
+                        scheduleRequest.setStartX(startCoords.getLat());
+                        scheduleRequest.setStartY(startCoords.getLng());
+                        scheduleRequest.setStartLocation(startLocationFromSlots);
+                        log.debug("출발지 좌표 변환 성공: {}, ({}, {})", startLocationFromSlots, startCoords.getLat(), startCoords.getLng());
+                    } else {
+                        log.warn("출발지 좌표 변환 실패: {}", startLocationFromSlots);
+                        scheduleRequest.setStartLocation(startLocationFromSlots);
+                    }
+
+                    // 도착지 처리
+                    if (locationInfo != null && !locationInfo.trim().isEmpty()) {
+                        var destCoords = geocodingService.getCoordinates(locationInfo);
+                        if (destCoords != null) {
+                            scheduleRequest.setDestinationX(destCoords.getLat());
+                            scheduleRequest.setDestinationY(destCoords.getLng());
+                            scheduleRequest.setLocation(locationInfo);
+                            log.debug("도착지 좌표 변환 성공: {}, ({}, {})", locationInfo, destCoords.getLat(), destCoords.getLng());
+                        } else {
+                            log.warn("도착지 좌표 변환 실패: {}", locationInfo);
+                            scheduleRequest.setLocation(locationInfo);
+                        }
+                    }
+                } else if (locationInfo != null && !locationInfo.trim().isEmpty()) {
+                    // startLocation이 없고 location만 있는 경우 (기존 로직)
                     String[] locations = parseLocationInfo(locationInfo);
                     if (locations.length == 2) {
                         String startLocation = locations[0];
@@ -503,15 +537,25 @@ public class ChatService {
                     }
                 }
 
-                // EXAONE 응답에 맞게 datetime 필드 사용
+                // datetime과 endTime 필드 처리
                 Object datetimeObj = slots.get("datetime");
                 if (datetimeObj instanceof String) {
                     DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm");
                     LocalDateTime dateTime = LocalDateTime.parse((String) datetimeObj, formatter);
                     scheduleRequest.setStartTime(dateTime);
-                    scheduleRequest.setEndTime(dateTime.plusHours(1));
+
+                    // endTime이 별도로 제공되었는지 확인
+                    Object endTimeObj = slots.get("endTime");
+                    if (endTimeObj instanceof String) {
+                        LocalDateTime endTime = LocalDateTime.parse((String) endTimeObj, formatter);
+                        scheduleRequest.setEndTime(endTime);
+                        log.info("✅ endTime 필드 발견: '{}'", endTimeObj);
+                    } else {
+                        scheduleRequest.setEndTime(dateTime.plusHours(1));
+                    }
                 }
 
+                // memo 처리
                 String memo = "";
                 Object memoVal = slots.get("memo");
                 if (memoVal instanceof String && !((String) memoVal).isEmpty()) {
@@ -531,6 +575,7 @@ public class ChatService {
                 }
                 scheduleRequest.setMemo(memo);
 
+                // supplies 처리
                 String supplies = "";
                 Object suppliesVal = slots.get("supplies");
                 if (suppliesVal instanceof String && !((String) suppliesVal).isEmpty()) {
@@ -566,6 +611,24 @@ public class ChatService {
                 scheduleRequest.setSupplies(supplies);
                 log.debug("Extracted memo: '{}', supplies: '{}' from slots after checking fallbacks", memo, supplies);
 
+                // routineName 처리 - 루틴 이름으로 루틴 ID 찾기
+                String routineName = (String) slots.get("routineName");
+                if (routineName != null && !routineName.trim().isEmpty()) {
+                    log.info("✅ routineName 필드 발견: '{}'", routineName);
+                    try {
+                        // 사용자의 루틴 중에서 이름으로 검색 (대소문자 구분 없음)
+                        Optional<Routine> routineOpt = routineRepository.findByUserIdAndNameIgnoreCase(userId, routineName.trim());
+                        if (routineOpt.isPresent()) {
+                            routineId = routineOpt.get().getId();
+                            log.info("✅ 루틴 찾기 성공 - 루틴명: '{}', 루틴 ID: {}", routineName, routineId);
+                        } else {
+                            log.warn("⚠️ 루틴을 찾을 수 없음 - 루틴명: '{}', 사용자 ID: {}", routineName, userId);
+                        }
+                    } catch (Exception e) {
+                        log.error("❌ 루틴 검색 중 오류 발생: {}", e.getMessage(), e);
+                    }
+                }
+
             } else {
                 log.warn("Slots map is null in handleCreateSchedule. Cannot extract schedule details.");
                 return ChatResponse.builder()
@@ -575,21 +638,44 @@ public class ChatService {
             }
             scheduleRequest.setCategory("PERSONAL"); // 기본값 설정
 
-            Schedule schedule = scheduleService.createSchedule(
-                    userId,
-                    scheduleRequest.getTitle(),
-                    scheduleRequest.getStartTime(),
-                    scheduleRequest.getEndTime(),
-                    scheduleRequest.getStartLocation(),
-                    scheduleRequest.getLocation(),
-                    scheduleRequest.getMemo(),
-                    scheduleRequest.getCategory(),
-                    scheduleRequest.getSupplies(),
-                    scheduleRequest.getStartX(),
-                    scheduleRequest.getStartY(),
-                    scheduleRequest.getDestinationX(),
-                    scheduleRequest.getDestinationY()
-            );
+            // 루틴이 있는 경우와 없는 경우를 분기 처리
+            Schedule schedule;
+            if (routineId != null) {
+                log.info("🔄 루틴 기반 일정 생성 - 루틴 ID: {}", routineId);
+                schedule = scheduleService.createFromRoutine(
+                        userId,
+                        routineId,
+                        scheduleRequest.getTitle(),
+                        scheduleRequest.getStartTime(),
+                        scheduleRequest.getEndTime(),
+                        scheduleRequest.getStartLocation(),
+                        scheduleRequest.getStartX(),
+                        scheduleRequest.getStartY(),
+                        scheduleRequest.getLocation(),
+                        scheduleRequest.getDestinationX(),
+                        scheduleRequest.getDestinationY(),
+                        scheduleRequest.getMemo(),
+                        scheduleRequest.getSupplies(),
+                        scheduleRequest.getCategory()
+                );
+            } else {
+                log.info("📝 일반 일정 생성 (루틴 없음)");
+                schedule = scheduleService.createSchedule(
+                        userId,
+                        scheduleRequest.getTitle(),
+                        scheduleRequest.getStartTime(),
+                        scheduleRequest.getEndTime(),
+                        scheduleRequest.getStartLocation(),
+                        scheduleRequest.getLocation(),
+                        scheduleRequest.getMemo(),
+                        scheduleRequest.getCategory(),
+                        scheduleRequest.getSupplies(),
+                        scheduleRequest.getStartX(),
+                        scheduleRequest.getStartY(),
+                        scheduleRequest.getDestinationX(),
+                        scheduleRequest.getDestinationY()
+                );
+            }
 
             return ChatResponse.builder()
                     .message("일정이 성공적으로 등록되었습니다.")
@@ -802,26 +888,51 @@ public class ChatService {
                 }
             }
 
-            // 3. 시간만 있을 때
+            // 3. 시간만 있을 때 (날짜 범위로 조회)
             if (title == null && datetime != null) {
                 LocalDateTime dateTime = LocalDateTime.parse(datetime, formatter);
-                List<Schedule> candidates = scheduleService.findSchedulesByTime(userId, dateTime);
+                // 해당 날짜의 전체 범위로 조회 (00:00 ~ 23:59)
+                LocalDateTime startTime = dateTime.withHour(0).withMinute(0).withSecond(0);
+                LocalDateTime endTime = dateTime.withHour(23).withMinute(59).withSecond(59);
+
+                List<Schedule> candidates = scheduleService.getSchedulesByDateRange(userId, startTime, endTime);
+
                 if (candidates.size() == 1) {
-                    scheduleService.deleteSchedule(userId, candidates.get(0).getId());
+                    Schedule schedule = candidates.get(0);
+                    scheduleService.deleteSchedule(userId, schedule.getId());
+
+                    String dateStr = dateTime.format(DateTimeFormatter.ofPattern("MM월 dd일"));
                     return ChatResponse.builder()
-                            .message("일정이 성공적으로 삭제되었습니다.")
+                            .message(String.format("%s '%s' 일정이 삭제되었습니다.", dateStr, schedule.getTitle()))
                             .intent("DELETE_SCHEDULE")
                             .action("deleted")
                             .success(true)
                             .build();
                 } else if (candidates.isEmpty()) {
+                    String dateStr = dateTime.format(DateTimeFormatter.ofPattern("MM월 dd일"));
                     return ChatResponse.builder()
-                            .message("해당 시간에 일정이 없습니다.")
+                            .message(String.format("%s에는 일정이 없습니다.", dateStr))
                             .success(false)
                             .build();
                 } else {
+                    String dateStr = dateTime.format(DateTimeFormatter.ofPattern("MM월 dd일"));
+                    StringBuilder message = new StringBuilder();
+                    message.append(String.format("%s에 일정이 %d개 있습니다. 제목을 지정해 주세요:\n\n",
+                        dateStr, candidates.size()));
+
+                    DateTimeFormatter timeFormatter = DateTimeFormatter.ofPattern("HH:mm");
+                    for (int i = 0; i < candidates.size(); i++) {
+                        Schedule s = candidates.get(i);
+                        message.append(String.format("%d. %s (%s ~ %s)\n",
+                            i + 1,
+                            s.getTitle(),
+                            s.getStartTime().format(timeFormatter),
+                            s.getEndTime().format(timeFormatter)));
+                    }
+
                     return ChatResponse.builder()
-                            .message("해당 시간에 여러 일정이 있습니다. 제목도 함께 입력해 주세요.")
+                            .message(message.toString().trim())
+                            .data(candidates)
                             .success(false)
                             .build();
                 }
@@ -834,6 +945,7 @@ public class ChatService {
                     .build();
 
         } catch (Exception e) {
+            log.error("❌ handleDeleteSchedule 오류 발생", e);
             return ChatResponse.builder()
                     .message("일정 삭제 중 오류가 발생했습니다: " + e.getMessage())
                     .success(false)
@@ -869,7 +981,7 @@ public class ChatService {
             String title = (String) parameters.get("title");
             String datetimeStr = (String) parameters.get("datetime");
             String locationInfo = (String) parameters.get("location");
-            String memo = (String) parameters.get("memo");
+            String memo = (String) parameters.get("supplies");
             String supplies = (String) parameters.get("supplies");
             String routineName = (String) parameters.get("routine");  // 루틴 이름 추가
 
