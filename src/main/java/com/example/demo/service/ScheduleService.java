@@ -375,14 +375,32 @@ public class ScheduleService {
         // 기존 쿼리로 후보 일정들을 더 많이 가져옴 (루틴이 있는 경우를 대비)
         List<Schedule> schedules = scheduleRepository.findLatestInProgressSchedulesByUserId(userId, now, PageRequest.of(0, 10));
 
+        log.info("[ScheduleService] getLatestInProgressSchedule - User ID: {}, 현재: {}, 후보 일정 수: {}",
+                userId, now, schedules.size());
+
         if (schedules.isEmpty()) {
             return Optional.empty();
         }
 
         // 루틴 시작 시간을 고려하여 실제 진행 중인 일정 필터링
         for (Schedule schedule : schedules) {
-            LocalDateTime actualStartTime = schedule.getStartTime();
-            LocalDateTime displayStartTime = schedule.getStartTime(); // 표시 시작 시간 (루틴 시작 1시간 전)
+            log.debug("[ScheduleService] 일정 체크 중 - ID: {}, Title: '{}', Status: {}, 스케줄 시작: {}, 종료: {}, 루틴ID: {}",
+                    schedule.getId(), schedule.getTitle(), schedule.getStatus(),
+                    schedule.getStartTime(), schedule.getEndTime(), schedule.getRoutineId());
+
+            // IN_PROGRESS 상태인 경우: 이미 루틴이 시작되었으므로 표시 조건 만족
+            if (schedule.getStatus() == Schedule.ScheduleStatus.IN_PROGRESS) {
+                if (schedule.getEndTime().isAfter(now)) {
+                    log.info("[ScheduleService] ✅ IN_PROGRESS 상태 일정 발견 - Schedule ID: {}, Title: '{}', 종료: {}",
+                            schedule.getId(), schedule.getTitle(), schedule.getEndTime());
+                    return Optional.of(schedule);
+                }
+                log.debug("[ScheduleService] ❌ IN_PROGRESS이지만 종료됨 - Schedule ID: {}", schedule.getId());
+                continue; // 종료 시간이 지난 경우 다음 일정 확인
+            }
+
+            // PENDING 상태인 경우: 루틴 시작 1시간 전부터 표시
+            LocalDateTime displayStartTime = schedule.getStartTime(); // 기본값: 스케줄 시작 시간
 
             // 루틴이 있는 경우 루틴 시작 시간 계산
             if (schedule.getRoutineId() != null) {
@@ -391,11 +409,10 @@ public class ScheduleService {
                             schedule.getRoutineId(), schedule.getStartTime());
 
                     if (routineStartTime != null) {
-                        actualStartTime = routineStartTime;
                         // 루틴 시작 1시간 전부터 표시
                         displayStartTime = routineStartTime.minusHours(1);
-                        log.debug("[ScheduleService] 루틴이 있는 스케줄 - Schedule ID: {}, 루틴 시작: {}, 표시 시작(1시간 전): {}, 스케줄 시작: {}, 현재: {}",
-                                schedule.getId(), routineStartTime, displayStartTime, schedule.getStartTime(), now);
+                        log.info("[ScheduleService] PENDING 상태 루틴 스케줄 체크 - Schedule ID: {}, Title: '{}', 루틴 시작: {}, 표시 시작(1시간 전): {}, 스케줄 시작: {}, 현재: {}",
+                                schedule.getId(), schedule.getTitle(), routineStartTime, displayStartTime, schedule.getStartTime(), now);
                     }
                 } catch (Exception e) {
                     log.error("[ScheduleService] 루틴 시작 시간 계산 실패 - Schedule ID: {}, 오류: {}",
@@ -403,19 +420,23 @@ public class ScheduleService {
                     // 오류 발생 시 스케줄 시작 시간 사용
                 }
             } else {
-                // 루틴이 없는 경우에도 스케줄 시작 시간 사용
-                displayStartTime = schedule.getStartTime();
+                log.debug("[ScheduleService] PENDING 상태 일반 스케줄 - Schedule ID: {}, Title: '{}', 시작: {}, 현재: {}",
+                        schedule.getId(), schedule.getTitle(), schedule.getStartTime(), now);
             }
 
-            // 실제 진행 중인지 확인: (루틴 시작 1시간 전) <= 현재 시간 < 스케줄 종료 시간
+            // 표시 시작 시간 체크: (루틴 시작 1시간 전 or 스케줄 시작 시간) <= 현재 시간 < 스케줄 종료 시간
             if (!displayStartTime.isAfter(now) && schedule.getEndTime().isAfter(now)) {
-                log.info("[ScheduleService] 진행 중인 일정 발견 - Schedule ID: {}, Title: '{}', 표시 시작: {}, 루틴/스케줄 시작: {}, 종료: {}",
-                        schedule.getId(), schedule.getTitle(), displayStartTime, actualStartTime, schedule.getEndTime());
+                log.info("[ScheduleService] ✅ PENDING 상태 일정 표시 조건 충족 - Schedule ID: {}, Title: '{}', 표시 시작: {}, 현재: {}, 종료: {}",
+                        schedule.getId(), schedule.getTitle(), displayStartTime, now, schedule.getEndTime());
                 return Optional.of(schedule);
+            } else {
+                log.info("[ScheduleService] ❌ PENDING 상태 일정 표시 조건 불충족 - Schedule ID: {}, Title: '{}', 표시 시작: {}, 현재: {} (아직 {}초 남음)",
+                        schedule.getId(), schedule.getTitle(), displayStartTime, now,
+                        java.time.Duration.between(now, displayStartTime).getSeconds());
             }
         }
 
-        log.debug("[ScheduleService] 진행 중인 일정 없음 - User ID: {}, 현재: {}", userId, now);
+        log.info("[ScheduleService] 진행 중인 일정 없음 - User ID: {}, 현재: {}", userId, now);
         return Optional.empty();
     }
 

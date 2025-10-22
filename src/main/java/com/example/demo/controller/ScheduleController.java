@@ -6,6 +6,7 @@ import com.example.demo.entity.entityInterface.AppUser;
 import com.example.demo.entity.schedule.Schedule;
 import com.example.demo.service.ScheduleService;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -20,6 +21,7 @@ import java.util.Optional;
 @RestController
 @RequestMapping("/api/schedules")
 @RequiredArgsConstructor
+@Slf4j
 public class ScheduleController {
 
     private final ScheduleService scheduleService;
@@ -111,24 +113,39 @@ public class ScheduleController {
     // 진행 중인 가장 최근 일정 1개 조회 API
     @GetMapping("/in-progress/latest")
     public ResponseEntity<?> getLatestInProgressSchedule(@AuthenticationPrincipal AppUser appUser) {
+        log.info("🔍 [ScheduleController] /in-progress/latest API 호출됨 - User ID: {}",
+                appUser != null ? appUser.getId() : "null");
+
         if (appUser == null) {
             return ResponseEntity.status(401).body(Map.of("message", "인증되지 않은 사용자입니다."));
         }
         Optional<Schedule> scheduleOpt = scheduleService.getLatestInProgressSchedule(appUser.getId());
 
         if (scheduleOpt.isEmpty()) {
-            return ResponseEntity.ok(null);
+            log.info("🔍 [ScheduleController] 진행 중인 일정 없음 - null 반환");
+            return ResponseEntity.ok()
+                    .cacheControl(org.springframework.http.CacheControl.noCache())
+                    .header("Cache-Control", "no-cache, no-store, must-revalidate")
+                    .header("Pragma", "no-cache")
+                    .header("Expires", "0")
+                    .body(null);
         }
 
         Schedule schedule = scheduleOpt.get();
+        log.info("🔍 [ScheduleController] 진행 중인 일정 발견 - Schedule ID: {}, Title: '{}', 루틴 여부: {}",
+                schedule.getId(), schedule.getTitle(), schedule.getRoutineId() != null);
 
         // 루틴이 있는 경우 루틴 계산 정보 포함
-        if (schedule.getRoutineId() != null) {
-            return ResponseEntity.ok(scheduleService.getScheduleWithRoutineInfo(schedule));
-        }
+        Object responseBody = schedule.getRoutineId() != null
+                ? scheduleService.getScheduleWithRoutineInfo(schedule)
+                : schedule;
 
-        // 루틴이 없는 경우 기존 Schedule 반환
-        return ResponseEntity.ok(schedule);
+        return ResponseEntity.ok()
+                .cacheControl(org.springframework.http.CacheControl.noCache())
+                .header("Cache-Control", "no-cache, no-store, must-revalidate")
+                .header("Pragma", "no-cache")
+                .header("Expires", "0")
+                .body(responseBody);
     }
 
     @PostMapping("/ai-function")
