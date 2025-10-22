@@ -36,10 +36,11 @@ public interface ScheduleRepository extends JpaRepository<Schedule, Long> {
     // 진행 중인 일정 조회 - IN_PROGRESS 상태를 우선으로 검색
     // 루틴이 있는 경우 스케줄 시작 시간보다 일찍 IN_PROGRESS 상태가 될 수 있으므로
     // 상태 기반으로 검색하되, 종료 시간이 지난 것은 제외
+    // PENDING 상태는 넓게 가져와서 서비스 레이어에서 루틴 시작 1시간 전 체크
     @Query("SELECT s FROM Schedule s WHERE s.user.id = :userId AND " +
-           "((s.status = 'IN_PROGRESS' AND s.endTime > :now) OR " +
-           "(s.status = 'PENDING' AND s.startTime <= :now AND s.endTime > :now)) " +
-           "ORDER BY s.startTime DESC")
+           "s.endTime > :now AND " +
+           "(s.status = 'IN_PROGRESS' OR s.status = 'PENDING') " +
+           "ORDER BY s.startTime ASC")
     List<Schedule> findLatestInProgressSchedulesByUserId(@Param("userId") Long userId, @Param("now") LocalDateTime now, Pageable pageable);
 
     /**
