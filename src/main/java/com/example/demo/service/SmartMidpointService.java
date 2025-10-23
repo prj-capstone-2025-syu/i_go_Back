@@ -75,22 +75,38 @@ public class SmartMidpointService {
     private MidpointResponse handlePersonCountInput(Long userId, String userMessage, MidpointSession session) {
          try {
             int count = extractPersonCount(userMessage);
+
+            // [추가] 최소 인원 검증
             if (count < 2) {
+                log.warn("User {} entered invalid person count (less than 2): {}", userId, count);
                 return MidpointResponse.builder()
                         .success(false)
                         .message("최소 2명 이상이어야 합니다. 다시 인원수를 알려주세요.")
                         .build();
             }
+
+            if (count > 6) {
+                log.warn("User {} entered person count exceeding the limit (max 6): {}", userId, count);
+                return MidpointResponse.builder()
+                        .success(false)
+                        .message(String.format("죄송합니다, 현재 최대 %d명까지만 지원합니다. 다시 인원수를 알려주세요.", 6))
+                        .build();
+            }
+
+            // 검증 통과 시 세션 업데이트 및 다음 단계 안내
             session.setTotalPersons(count);
             session.setState(MidpointSession.SessionState.COLLECTING_LOCATIONS);
             userSessions.put(userId, session);
+            log.info("User {} set person count to {}", userId, count);
             return MidpointResponse.builder()
                     .success(true)
                     .message(String.format("총 %d명이 만나시는군요! 👥\n\n" +
                             "이제 각자의 출발 위치를 알려주세요.\n" +
                             "(예: 강남역, 홍대입구역, 신림역)", count))
                     .build();
-        } catch (IllegalArgumentException e) { // 구체적인 예외 처리
+
+        } catch (IllegalArgumentException e) { // 숫자 파싱 실패 시
+             log.warn("User {} entered non-numeric person count: {}", userId, userMessage);
             return MidpointResponse.builder()
                     .success(false)
                     .message(e.getMessage() + "\n(예: 3명, 5명 또는 숫자만 입력)")
