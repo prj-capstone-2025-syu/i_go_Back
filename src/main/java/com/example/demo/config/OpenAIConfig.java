@@ -26,21 +26,4 @@ public class OpenAIConfig {
         return new OpenAiService(openaiApiKey, Duration.ofSeconds(60));
     }
 
-    /**
-     * 기본 GPT-4 모델용 OpenAI 서비스 (중간위치 찾기용)
-     */
-    @Bean("gpt4Service")
-    public OpenAiService gpt4Service() {
-        log.info("Initializing GPT-4 service for midpoint calculation");
-        return new OpenAiService(openaiApiKey, Duration.ofSeconds(60));
-    }
-
-    /**
-     * GPT-5 Nano 모델용 OpenAI 서비스 (선호도 처리)
-     */
-    @Bean("gpt5NanoService")
-    public OpenAiService gpt5NanoService() {
-        log.info("Initializing GPT-5 Nano service for future use");
-        return new OpenAiService(openaiApiKey, Duration.ofSeconds(60));
-    }
 }

@@ -1,26 +1,24 @@
 package com.example.demo.service;
 
-import com.example.demo.dto.midpoint.*;
-import com.example.demo.exception.LocationNotFoundException;
-import com.theokanning.openai.completion.chat.ChatCompletionRequest;
-import com.theokanning.openai.completion.chat.ChatMessage;
-import com.theokanning.openai.service.OpenAiService;
+import com.example.demo.dto.midpoint.Coordinates; // Coordinates DTO import
+import com.example.demo.dto.midpoint.GooglePlace; // GooglePlace DTO import
+import com.example.demo.dto.midpoint.GooglePlacesResponse; // GooglePlacesResponse DTO import
+import com.example.demo.exception.LocationNotFoundException; // LocationNotFoundException import
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
-import org.springframework.web.client.HttpClientErrorException;
-import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.RestTemplate;
 import org.springframework.web.util.UriComponentsBuilder;
 
 import java.net.URI;
-import java.nio.charset.StandardCharsets;
-import java.util.ArrayList;
-import java.util.Comparator;
+import java.nio.charset.StandardCharsets; // StandardCharsets import 추가
+import java.util.Collections; // Collections import 추가
 import java.util.List;
 
+/**
+ * Google Places API를 사용하여 주변 장소를 검색하는 서비스
+ */
 @Slf4j
 @Service
 @RequiredArgsConstructor
@@ -28,140 +26,111 @@ public class MidpointService {
 
     private final RestTemplate restTemplate;
 
-    @Qualifier("gpt5NanoService")
-    private final OpenAiService gpt5NanoService;
-
     @Value("${google.maps.api.key}")
     private String googleMapsApiKey;
-    private static final String GEOCODING_API_URL = "https://maps.googleapis.com/maps/api/geocode/json";
+
     private static final String PLACES_API_URL = "https://maps.googleapis.com/maps/api/place/nearbysearch/json";
 
-    // 순수하게 수학적 중간 좌표 '만' 계산해서 반환하는 메서드
-    public Coordinates calculateGeometricMidpoint(List<String> locations) {
-        if (locations == null || locations.size() < 2) {
-            throw new IllegalArgumentException("최소 2개 이상의 위치가 필요합니다.");
+    /**
+     * 주어진 좌표 근처에서 특정 타입의 장소를 Google Places API로 검색합니다.
+     * @param coords 중심 좌표
+     * @param placeType 검색할 장소 타입 (e.g., "subway_station", "restaurant")
+     * @return GooglePlace 객체 목록
+     * @throws LocationNotFoundException 장소를 찾지 못했을 경우
+     */
+    public List<GooglePlace> getNearbyPlaces(Coordinates coords, String placeType) {
+        if (coords == null || placeType == null || placeType.isBlank()) {
+            throw new IllegalArgumentException("좌표와 장소 타입은 필수입니다.");
         }
-        List<Coordinates> coordinatesList = new ArrayList<>();
-        for (String location : locations) {
-            coordinatesList.add(getCoordinatesForLocation(location));
-        }
-        return calculateMidpoint(coordinatesList);
-    }
 
-    // 이 메서드는 '선호도'를 인자로 받아서 동적으로 검색 타입을 결정함
-    public List<GooglePlace> getNearbyPlaces(Coordinates coords, String preferences) {
-        String searchType = mapPreferenceToApiType(preferences);
-        log.info("User preference '{}' classified to Google API type '{}' by LLM", preferences, searchType);
+        log.info("🔍 Google Places: Searching for '{}' near ({}, {})",
+                 placeType, coords.getLat(), coords.getLng());
 
-        List<GooglePlace> places = searchNearbyPlaces(coords, searchType, 1000);
+        // 1. 거리순 검색 시도 (가장 정확)
+        List<GooglePlace> places = searchNearbyPlacesRankedByDistance(coords, placeType);
 
+        // 2. 거리순 결과 없으면 반경 1km 검색 시도 (Fallback 1)
         if (places.isEmpty()) {
-            log.warn("No results for type '{}', falling back to 'point_of_interest'", searchType);
-            places = searchNearbyPlaces(coords, "point_of_interest", 1500);
+            log.warn("Google Places: No results with rankby=distance. Trying radius search (1km)...");
+            places = searchNearbyPlacesWithRadius(coords, placeType, 1000); // 반경 1km
         }
 
+        // 3. 반경 1km 결과도 없으면 반경 2km 검색 시도 (Fallback 2)
         if (places.isEmpty()) {
-            log.warn("### GPT CROSS-VALIDATION ### No candidate places were found by Google Places API.");
-            throw new LocationNotFoundException("계산된 중간지점 근처에서 '" + preferences + "'에 해당하는 장소를 찾을 수 없습니다.");
-        } else {
-            log.info("### GPT CROSS-VALIDATION ### Found {} candidate places for preference '{}':", places.size(), preferences);
-            for (int i = 0; i < places.size(); i++) {
-                GooglePlace place = places.get(i);
-                log.info("  -> Candidate [{}]: Name='{}', Address='{}', Rating={}",
-                        i + 1, place.getName(), place.getVicinity(), place.getRating());
-            }
-            log.info("### END OF CANDIDATE LIST ###");
+            log.warn("Google Places: No results within 1km radius. Trying radius search (2km)...");
+            places = searchNearbyPlacesWithRadius(coords, placeType, 2000); // 반경 2km
         }
+
+        // 4. 최종 결과 확인 및 반환
+        if (places.isEmpty()) {
+            // 2km 반경에서도 못 찾으면 최종 실패 처리
+            log.error("Google Places: No results found even after fallback 2km radius search for type '{}'.", placeType);
+            throw new LocationNotFoundException(String.format("좌표 (%.6f, %.6f) 2km 반경 내에서 '%s' 타입의 장소를 찾을 수 없습니다.",
+                                                coords.getLat(), coords.getLng(), placeType));
+        }
+
+        log.info("✅ Google Places: Found {} places.", places.size());
         return places;
     }
 
-    private String mapPreferenceToApiType(String preference) {
-        if (preference == null || preference.isBlank()) return "point_of_interest";
+    /**
+     * Google Places Nearby Search API 호출 (거리순 정렬)
+     */
+    private List<GooglePlace> searchNearbyPlacesRankedByDistance(Coordinates coords, String type) {
+        URI uri = UriComponentsBuilder.fromHttpUrl(PLACES_API_URL)
+                .queryParam("location", coords.getLat() + "," + coords.getLng())
+                .queryParam("rankby", "distance") // 거리순
+                .queryParam("type", type)
+                .queryParam("key", googleMapsApiKey)
+                .queryParam("language", "ko")
+                .encode(StandardCharsets.UTF_8) // 인코딩 명시
+                .build(true) // alreadyEncoded=true 방지 (Builder가 인코딩하도록)
+                .toUri();
 
-        String prompt = String.format("""
-            사용자의 장소 선호도 문장을 분석하여, 아래 주어진 Google Places API 타입 중 가장 적합한 것 하나만 골라서 응답해.
-            오직 주어진 타입 단어 하나만 응답해야 하며, 다른 설명은 절대 추가하지 마.
-
-            [사용자 선호도]
-            "%s"
-
-            [Google Places API 타입 목록]
-            - subway_station, restaurant, cafe, park, bar, point_of_interest
-            """, preference);
-
+        log.debug("Google Places API request (rankby=distance, type={}): {}", type, uri);
         try {
-            ChatCompletionRequest request = ChatCompletionRequest.builder()
-                    .model("gpt-4o-mini") // [수정] 경량 모델 이름 지정 (네이밍은 너의 설정에 맞게)
-                    .messages(List.of(new ChatMessage("system", prompt)))
-                    .maxTokens(10)
-                    .temperature(0.0)
-                    .build();
-
-            // [수정] 주입받은 gpt5NanoService를 사용
-            String result = gpt5NanoService.createChatCompletion(request)
-                                         .getChoices().get(0).getMessage().getContent()
-                                         .trim().toLowerCase();
-
-            List<String> validTypes = List.of("subway_station", "restaurant", "cafe", "park", "bar", "point_of_interest");
-            if (validTypes.contains(result)) {
-                return result;
+            GooglePlacesResponse response = restTemplate.getForObject(uri, GooglePlacesResponse.class);
+            if (response != null && "OK".equals(response.getStatus()) && response.getResults() != null) {
+                return response.getResults();
+            } else if (response != null && !"ZERO_RESULTS".equals(response.getStatus())) {
+                // ZERO_RESULTS 외의 오류 상태 로깅
+                log.warn("Google Places API (rankby=distance) returned status: {}", response.getStatus());
             }
-            log.warn("LLM classification result '{}' is not a valid type. Falling back to default.", result);
-            return "point_of_interest";
-
+            return Collections.emptyList(); // OK 아니거나 results 없으면 빈 리스트
         } catch (Exception e) {
-            log.error("Error during LLM preference classification: {}. Falling back to keyword matching.", e.getMessage());
-            return mapPreferenceByKeyword(preference);
+             log.error("Error calling Google Places API (rankby=distance) for type {}: {}", type, e.getMessage());
+             log.debug("Google Places API Exception details:", e); // 디버깅용 스택 트레이스
+            return Collections.emptyList(); // 에러 시 빈 리스트
         }
     }
 
-    private String mapPreferenceByKeyword(String preference) {
-        String lowerPref = preference.toLowerCase();
-        if (lowerPref.contains("지하철") || lowerPref.contains("역")) return "subway_station";
-        if (lowerPref.contains("식당") || lowerPref.contains("맛집") || lowerPref.contains("밥")) return "restaurant";
-        if (lowerPref.contains("카페") || lowerPref.contains("커피")) return "cafe";
-        if (lowerPref.contains("공원")) return "park";
-        if (lowerPref.contains("술집") || lowerPref.contains("호프")) return "bar";
-        return "point_of_interest";
-    }
+    /**
+     * Google Places Nearby Search API 호출 (반경 지정) - Fallback용
+     */
+    private List<GooglePlace> searchNearbyPlacesWithRadius(Coordinates coords, String type, int radius) {
+        URI uri = UriComponentsBuilder.fromHttpUrl(PLACES_API_URL)
+                .queryParam("location", coords.getLat() + "," + coords.getLng())
+                .queryParam("radius", radius)
+                .queryParam("type", type)
+                .queryParam("key", googleMapsApiKey)
+                .queryParam("language", "ko")
+                .encode(StandardCharsets.UTF_8)
+                .build(true)
+                .toUri();
 
-    private List<GooglePlace> searchNearbyPlaces(Coordinates coords, String type, int radius) {
-        URI uri = UriComponentsBuilder.fromHttpUrl(PLACES_API_URL).queryParam("location", coords.getLat() + "," + coords.getLng()).queryParam("radius", radius).queryParam("type", type).queryParam("key", googleMapsApiKey).queryParam("language", "ko").build(true).toUri();
-        log.info("Searching for nearby places ({}) with URI: {}", type, uri);
-        GooglePlacesResponse response = restTemplate.getForObject(uri, GooglePlacesResponse.class);
-        if (response != null && "OK".equals(response.getStatus()) && response.getResults() != null) {
-            return response.getResults();
-        }
-        return new ArrayList<>();
-    }
-    public Coordinates getCoordinatesForLocation(String locationName) {
+         log.debug("Google Places API request (radius={}, type={}): {}", radius, type, uri);
         try {
-            String encodedAddress = UriComponentsBuilder.newInstance().queryParam("address", locationName.trim()).build().encode(StandardCharsets.UTF_8).getQuery().split("=")[1];
-            String urlString = GEOCODING_API_URL + "?address=" + encodedAddress + "&language=ko" + "&region=kr" + "&key=" + googleMapsApiKey;
-            log.info("Requesting Geocoding URL: {}", urlString);
-            URI uri = URI.create(urlString);
-            GoogleGeocodingResponse response = restTemplate.getForObject(uri, GoogleGeocodingResponse.class);
-            if (response == null || !"OK".equals(response.getStatus()) || response.getResults() == null || response.getResults().isEmpty()) {
-                String status = (response != null) ? response.getStatus() : "NULL_RESPONSE";
-                log.warn("Geocoding failed for '{}' with status: {}", locationName, status);
-                if ("ZERO_RESULTS".equals(status)) throw new LocationNotFoundException("'" + locationName + "'에 대한 위치를 찾을 수 없습니다.");
-                throw new LocationNotFoundException("Geocoding API 오류: " + status);
+            GooglePlacesResponse response = restTemplate.getForObject(uri, GooglePlacesResponse.class);
+            if (response != null && "OK".equals(response.getStatus()) && response.getResults() != null) {
+                return response.getResults();
+            } else if (response != null && !"ZERO_RESULTS".equals(response.getStatus())) {
+                log.warn("Google Places API (radius) returned status: {}", response.getStatus());
             }
-            GoogleGeocodingResponse.Location location = response.getResults().get(0).getGeometry().getLocation();
-            log.info("✅ Found coordinates for '{}': lat={}, lng={}", locationName, location.getLat(), location.getLng());
-            return new Coordinates(location.getLat(), location.getLng());
+            return Collections.emptyList();
         } catch (Exception e) {
-            if (e instanceof LocationNotFoundException) throw e;
-            log.error("Unexpected error for '{}': {}", locationName, e.getMessage(), e);
-            throw new LocationNotFoundException("'" + locationName + "' 위치 조회 중 알 수 없는 오류가 발생했습니다.", e);
+             log.error("Error calling Google Places API (radius) for type {}: {}", type, e.getMessage());
+             log.debug("Google Places API Exception details:", e);
+            return Collections.emptyList();
         }
-    }
-    private Coordinates calculateMidpoint(List<Coordinates> coordinatesList) {
-        double totalLat = 0.0, totalLng = 0.0;
-        for (Coordinates coords : coordinatesList) {
-            totalLat += coords.getLat();
-            totalLng += coords.getLng();
-        }
-        return new Coordinates(totalLat / coordinatesList.size(), totalLng / coordinatesList.size());
     }
 }
