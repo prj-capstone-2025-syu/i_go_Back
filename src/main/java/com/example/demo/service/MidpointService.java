@@ -43,24 +43,33 @@ public class MidpointService {
             throw new IllegalArgumentException("좌표와 장소 타입은 필수입니다.");
         }
 
-        // 1. 거리순 검색 시도 (더 정확한 근처 장소)
+        log.info("🔍 Google Places: Searching for '{}' near ({}, {})",
+                 placeType, coords.getLat(), coords.getLng());
+
+        // 1. 거리순 검색 시도 (가장 정확)
         List<GooglePlace> places = searchNearbyPlacesRankedByDistance(coords, placeType);
 
-        // 2. 거리순 결과 없으면 반경 검색 시도 (Fallback)
+        // 2. 거리순 결과 없으면 반경 1km 검색 시도 (Fallback 1)
         if (places.isEmpty()) {
-            log.warn("Google Places: No results found with rankby=distance for type '{}', trying radius search (1km)...", placeType);
+            log.warn("Google Places: No results with rankby=distance. Trying radius search (1km)...");
             places = searchNearbyPlacesWithRadius(coords, placeType, 1000); // 반경 1km
         }
 
-        // 3. Fallback 후에도 결과 없으면 예외 발생
+        // 3. 반경 1km 결과도 없으면 반경 2km 검색 시도 (Fallback 2)
         if (places.isEmpty()) {
-            log.warn("Google Places: No results found even after fallback radius search for type '{}'.", placeType);
-            throw new LocationNotFoundException(String.format("좌표 (%.6f, %.6f) 근처에서 '%s' 타입의 장소를 찾을 수 없습니다.",
+            log.warn("Google Places: No results within 1km radius. Trying radius search (2km)...");
+            places = searchNearbyPlacesWithRadius(coords, placeType, 2000); // 반경 2km
+        }
+
+        // 4. 최종 결과 확인 및 반환
+        if (places.isEmpty()) {
+            // 2km 반경에서도 못 찾으면 최종 실패 처리
+            log.error("Google Places: No results found even after fallback 2km radius search for type '{}'.", placeType);
+            throw new LocationNotFoundException(String.format("좌표 (%.6f, %.6f) 2km 반경 내에서 '%s' 타입의 장소를 찾을 수 없습니다.",
                                                 coords.getLat(), coords.getLng(), placeType));
         }
 
-        log.info("✅ Google Places: Found {} places of type '{}' near ({}, {})",
-                 places.size(), placeType, coords.getLat(), coords.getLng());
+        log.info("✅ Google Places: Found {} places.", places.size());
         return places;
     }
 

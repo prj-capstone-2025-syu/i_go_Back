@@ -3,16 +3,10 @@ package com.example.demo.service;
 import com.example.demo.dto.midpoint.RecommendedStation;
 import com.example.demo.dto.midpoint.*; // Coordinates, MidpointResponse, RecommendedStation, GooglePlace 포함
 import com.example.demo.dto.odsay.OdsaySearchStationResponse; // 신규 DTO
-import com.example.demo.dto.odsay.OdsaySubwayStationInfoResponse; // 신규 DTO
 import com.example.demo.exception.LocationNotFoundException;
-import com.theokanning.openai.completion.chat.ChatCompletionRequest;
-import com.theokanning.openai.completion.chat.ChatCompletionResult;
-import com.theokanning.openai.completion.chat.ChatMessage;
-import com.theokanning.openai.service.OpenAiService;
 import lombok.Data; // Lombok @Data import
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
@@ -32,9 +26,8 @@ public class SmartMidpointService {
     private final GeocodingService geocodingService; // 좌표 변환용
     private final MidpointService midpointService; // Google Places 검색용
     private final OdysseyTransitService odysseyTransitService; // ODsay API 호출용
+    private final GPT5ApiService gpt5ApiService; // GPT5 직접 호출용
 
-    @Qualifier("gpt5MiniService")
-    private final OpenAiService gpt5MiniService;
 
     @Value("${gpt5.Mini.model}")
     private String gpt5MiniModel;
@@ -73,7 +66,7 @@ public class SmartMidpointService {
         userSessions.put(userId, session);
         return MidpointResponse.builder()
                 .success(true)
-                .message("환승이 편리한 만남 장소를 찾아드리겠습니다! 🚇\n\n" +
+                .message("중간 만남 장소를 찾아드리겠습니다! 🚇\n\n" +
                         "먼저 총 몇 명이 만나실 예정인가요?\n" +
                         "(예: 3명, 5명)")
                 .build();
@@ -141,21 +134,20 @@ public class SmartMidpointService {
                     int needed = session.getTotalPersons();
 
                     StringBuilder responseMessage = new StringBuilder();
-                    if (!validLocations.isEmpty()) responseMessage.append(String.format("✅ %s 위치가 추가되었습니다!\n\n", String.join(", ", validLocations)));
                     if (!invalidLocations.isEmpty()) responseMessage.append(String.format("❌ '%s' 위치는 찾을 수 없었어요. 더 자세한 주소나 장소명으로 다시 시도해주세요.\n\n", String.join(", ", invalidLocations)));
 
                     // 충분한 위치가 수집되었는지 확인
                     if (collected >= needed) {
                         userSessions.remove(userId); // 추천 시작 시 세션 종료
                         List<String> finalLocations = session.getCollectedLocations().stream().limit(needed).collect(Collectors.toList());
-                        responseMessage.append(String.format("모든 위치(%d/%d) 수집 완료!\n수집된 위치: %s\n\n🔍 환승 편리한 역을 찾는 중...", collected, needed, String.join(", ", finalLocations)));
+                        //responseMessage.append(String.format("모든 위치(%d/%d) 수집 완료!\n수집된 위치: %s\n\n🔍 환승 편리한 역을 찾는 중...", collected, needed, String.join(", ", finalLocations)));
                         log.info("All locations collected for user {}. Starting recommendation...", userId);
 
                         // 추천 로직 호출
                         return calculateAndRecommendHybrid(finalLocations)
                                 .map(res -> {
                                     // 최종 메시지 앞에 진행 메시지 추가
-                                    res.setMessage(responseMessage.toString() + "\n\n" + res.getMessage());
+                                    res.setMessage(responseMessage.toString() + res.getMessage());
                                     return res;
                                 });
                     } else {
@@ -303,14 +295,14 @@ public class SmartMidpointService {
 
                 if (closestOdsayStationOpt.isEmpty()) {
                     log.warn("ODsay searchStation results for '{}' contained no suitable subway station.", googleStationName);
-                    // *** Flux.empty() -> Mono.empty() ***
+                    // Flux.empty() -> Mono.empty()
                     return Mono.<RecommendedStation>empty();
                 }
 
                 OdsaySearchStationResponse.StationInfo closestOdsayStation = closestOdsayStationOpt.get();
                 if (closestOdsayStation.getStationID() == null) {
                     log.error("Found ODsay station '{}' but its stationID is null!", closestOdsayStation.getStationName());
-                    // *** Flux.empty() -> Mono.empty() ***
+                    // Flux.empty() -> Mono.empty()
                     return Mono.<RecommendedStation>empty();
                 }
                 int odsayStationId = closestOdsayStation.getStationID();
@@ -369,7 +361,7 @@ public class SmartMidpointService {
 
         String gptMessage;
         if (fallbackMessage != null) {
-            gptMessage = fallbackMessage + "\n\n" + topStationsText;
+            gptMessage = fallbackMessage + "\n" + topStationsText;
         } else if (recommendedStations.isEmpty()) {
              gptMessage = "추천할 만한 환승역을 찾지 못했습니다. 입력한 위치를 다시 확인해주세요.";
         }
@@ -400,18 +392,33 @@ public class SmartMidpointService {
 
      private String generateAIRecommendationODsay(List<String> locations,
                                                   List<RecommendedStation> candidates) {
-         // ... (GPT 프롬프트 및 호출 로직은 이전과 동일, candidates가 비어있을 때 처리 추가) ...
-          if (candidates.isEmpty()) {
-             return "추천할 만한 환승역을 찾지 못했습니다.";
-         }
+        if (candidates.isEmpty()) {
+            return "추천할 만한 환승역을 찾지 못했습니다.";
+        }
 
-         StringBuilder candidatesText = new StringBuilder();
+        StringBuilder candidatesText = new StringBuilder();
         for (int i = 0; i < Math.min(candidates.size(), 3); i++) {
             RecommendedStation station = candidates.get(i);
             candidatesText.append(String.format("%d. 역 이름: %s, 지나는 노선: %s (%d개)\n",
                     i + 1, station.getStationName(), station.getUniqueLanes(), station.getLaneCount()));
         }
-
+//당신은 "환승역 추천 요약 AI"입니다. **매우 간결하게** 답변해야 합니다.
+//
+//                [입력 정보]
+//                - 참석자 출발 위치: %s
+//                - 추천 지하철역 후보 목록 (환승 많은 순):
+//                %s
+//
+//                [지시 사항]
+//                1. 위 '추천 지하철역 후보 목록'에서 **가장 환승이 편리한 역 1곳** (최대 2곳까지만)을 선정하세요.
+//                2. 선정된 각 역에 대해 다음 정보만 **간단히** 포함하여 **한두 문장**으로 추천 이유를 요약하세요:
+//                   - 역 이름 ( ~역 근처는 안되고 명확히 역 이름을 말해야함)
+//                   - 총 환승 가능 노선 수
+//                   - 주요 노선 이름 목록 (괄호 안에 쉼표로 구분)
+//                3. **절대로** 경로를 설명하거나 길게 부연 설명하지 마세요.
+//                4. 최종 답변 형식 예시:
+//                   "가장 추천하는 역은 **OO역**입니다. 총 N개 노선(A호선, B호선, C선) 환승이 가능하여 편리합니다."
+//                   (만약 2곳 추천 시: "추천 역은 OO역과 XX역입니다. OO역은 N개 노선(...), XX역은 M개 노선(...) 환승이 가능합니다.")
         try {
             String systemPrompt = String.format("""
                 당신은 "환승역 추천 요약 AI"입니다. **매우 간결하게** 답변해야 합니다.
@@ -422,38 +429,42 @@ public class SmartMidpointService {
                 %s
 
                 [지시 사항]
-                1. 위 '추천 지하철역 후보 목록'에서 **가장 환승이 편리한 역 1곳** (최대 2곳까지만)을 선정하세요.
+                1. 위 '추천 지하철역 후보 목록'에서 **가장 환승이 편리한 역 1곳** 을 선정하세요.
                 2. 선정된 각 역에 대해 다음 정보만 **간단히** 포함하여 **한두 문장**으로 추천 이유를 요약하세요:
                    - 역 이름
                    - 총 환승 가능 노선 수
                    - 주요 노선 이름 목록 (괄호 안에 쉼표로 구분)
                 3. **절대로** 경로를 설명하거나 길게 부연 설명하지 마세요.
                 4. 최종 답변 형식 예시:
-                   "가장 추천하는 역은 **OO역**입니다. 총 N개 노선(A호선, B호선, C선) 환승이 가능하여 편리합니다."
-                   (만약 2곳 추천 시: "추천 역은 OO역과 XX역입니다. OO역은 N개 노선(...), XX역은 M개 노선(...) 환승이 가능합니다.")
+                   "가장 추천하는 역은 "OO역" 입니다. 총 N개 노선(A호선, B호선, C선) 환승이 가능하여 편리합니다."
                 """,
                     String.join(", ", locations),
                     candidatesText.toString()
             );
 
-            ChatCompletionRequest request = ChatCompletionRequest.builder()
-                    .model(gpt5MiniModel)
-                    .messages(List.of(new ChatMessage("system", systemPrompt)))
-                    .maxCompletionTokens(gpt5MiniMaxTokens)
-                    .temperature(gpt5MiniTemperature)
-                    .build();
+            // ⭐ 직접 HTTP 호출로 변경
+            String aiResponse = gpt5ApiService.callGPT5(
+                    gpt5MiniModel,
+                    systemPrompt,
+                    gpt5MiniMaxTokens,
+                    gpt5MiniTemperature
+            );
 
-            ChatCompletionResult result = gpt5MiniService.createChatCompletion(request);
-            log.info("GPT5 Mini recommendation generated successfully based on ODsay station list.");
-            return result.getChoices().get(0).getMessage().getContent();
+            if (aiResponse != null) {
+                log.info("GPT5 recommendation generated successfully based on ODsay station list.");
+                log.info(aiResponse);
+                return aiResponse;
+            } else {
+                throw new RuntimeException("GPT-5 API returned null");
+            }
 
         } catch (Exception e) {
             log.error("Error generating AI recommendation using ODsay results: {}", e.getMessage(), e);
-            RecommendedStation topStation = candidates.get(0); // candidates는 비어있지 않음이 보장됨
-            return String.format("AI 추천 생성에 실패했습니다.\n\n환승이 가장 편리한 역은 '%s'(%d개 노선: %s) 입니다.",
-                                topStation.getStationName(), topStation.getLaneCount(), topStation.getUniqueLanes());
+            RecommendedStation topStation = candidates.get(0);
+            return String.format("AI 추천 생성에 실패했습니다.\n환승이 가장 편리한 역은 '%s'(%d개 노선: %s) 입니다.",
+                    topStation.getStationName(), topStation.getLaneCount(), topStation.getUniqueLanes());
         }
-     }
+    }
 
      private List<String> extractLocationsFromMessage(String message) {
         List<String> locations = new ArrayList<>();

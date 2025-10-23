@@ -26,12 +26,4 @@ public class OpenAIConfig {
         return new OpenAiService(openaiApiKey, Duration.ofSeconds(60));
     }
 
-    /**
-     * GPT-5 Mini 모델용 OpenAI 서비스 (중간역 처리)
-     */
-    @Bean("gpt5MiniService")
-    public OpenAiService gpt5MiniService() {
-        log.info("Initializing GPT-5 Mini service for future use");
-        return new OpenAiService(openaiApiKey, Duration.ofSeconds(60));
-    }
 }

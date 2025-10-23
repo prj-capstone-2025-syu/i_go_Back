@@ -116,7 +116,4 @@ public class MidpointController {
         log.warn("AppUser object provided by @AuthenticationPrincipal is null.");
         return null;
     }
-
-    // --- /find 엔드포인트는 제거됨 ---
-
 }
