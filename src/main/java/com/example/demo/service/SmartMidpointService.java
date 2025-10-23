@@ -1,99 +1,91 @@
 package com.example.demo.service;
 
-import com.example.demo.dto.midpoint.Coordinates;
-import com.example.demo.dto.midpoint.GooglePlace;
-import com.example.demo.dto.midpoint.MidpointResponse;
+import com.example.demo.dto.midpoint.RecommendedStation;
+import com.example.demo.dto.midpoint.*; // Coordinates, MidpointResponse, RecommendedStation, GooglePlace 포함
+import com.example.demo.dto.odsay.OdsaySearchStationResponse; // 신규 DTO
+import com.example.demo.dto.odsay.OdsaySubwayStationInfoResponse; // 신규 DTO
 import com.example.demo.exception.LocationNotFoundException;
 import com.theokanning.openai.completion.chat.ChatCompletionRequest;
 import com.theokanning.openai.completion.chat.ChatCompletionResult;
 import com.theokanning.openai.completion.chat.ChatMessage;
 import com.theokanning.openai.service.OpenAiService;
+import lombok.Data; // Lombok @Data import
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
+import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
 
-import java.util.Comparator;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
-/**
- * Service for providing AI-powered smart midpoint recommendations using GPT-4
- * Implements MVP flow: ask for number of people -> locations -> purpose -> preferences
- */
 @Slf4j
 @Service
 @RequiredArgsConstructor
 public class SmartMidpointService {
 
-    private final MidpointService midpointService;
+    private final GeocodingService geocodingService; // 좌표 변환용
+    private final MidpointService midpointService; // Google Places 검색용
+    private final OdysseyTransitService odysseyTransitService; // ODsay API 호출용
 
-    @Qualifier("gpt4Service")
-    private final OpenAiService gpt4Service;
+    @Qualifier("gpt5MiniService")
+    private final OpenAiService gpt5MiniService;
 
-    @Value("${gpt4.model}")
-    private String gpt4Model;
-
-    @Value("${gpt4.max.tokens}")
-    private int maxTokens;
-
-    @Value("${gpt4.temperature}")
-    private double temperature;
+    @Value("${gpt5.Mini.model}")
+    private String gpt5MiniModel;
+    @Value("${gpt5.Mini.max.tokens}")
+    private int gpt5MiniMaxTokens;
+    @Value("${gpt5.Mini.temperature}")
+    private double gpt5MiniTemperature;
 
     private final Map<Long, MidpointSession> userSessions = new ConcurrentHashMap<>();
 
-    public MidpointResponse processMidpointRequest(Long userId, String userMessage) {
+    // --- processMidpointRequest 및 세션 처리 메소드들 ---
+    public Mono<MidpointResponse> processMidpointRequest(Long userId, String userMessage) {
         try {
             MidpointSession session = userSessions.getOrDefault(userId, new MidpointSession());
             log.info("Processing midpoint request for user {}: message='{}', session state='{}'",
                     userId, userMessage, session.getState());
 
-            switch (session.getState()) {
-                case INITIAL:
-                    return handleInitialRequest(userId, session);
-                case WAITING_FOR_COUNT:
-                    return handlePersonCountInput(userId, userMessage, session);
-                case COLLECTING_LOCATIONS:
-                    return handleLocationInput(userId, userMessage, session);
-                case WAITING_FOR_PURPOSE:
-                    return handlePurposeInput(userId, userMessage, session);
-                case WAITING_FOR_PREFERENCES:
-                    return handlePreferencesInput(userId, userMessage, session);
-                default:
-                    return resetAndStartOver(userId);
-            }
+            return switch (session.getState()) {
+                case INITIAL -> Mono.just(handleInitialRequest(userId, session));
+                case WAITING_FOR_COUNT -> Mono.just(handlePersonCountInput(userId, userMessage, session));
+                case COLLECTING_LOCATIONS -> handleLocationInputAndRecommend(userId, userMessage, session); // 마지막 상태
+                default -> Mono.just(resetAndStartOver(userId)); // 예외 상태
+            };
         } catch (Exception e) {
             log.error("Error processing midpoint request: {}", e.getMessage(), e);
-            userSessions.remove(userId);
-            return MidpointResponse.builder()
+            userSessions.remove(userId); // 오류 시 세션 정리
+            return Mono.just(MidpointResponse.builder()
                     .success(false)
                     .message("처리 중 오류가 발생했습니다. 처음부터 다시 시도해주세요.")
-                    .build();
+                    .build());
         }
     }
 
-    private MidpointResponse handleInitialRequest(Long userId, MidpointSession session) {
+     private MidpointResponse handleInitialRequest(Long userId, MidpointSession session) {
         session.setState(MidpointSession.SessionState.WAITING_FOR_COUNT);
         userSessions.put(userId, session);
         return MidpointResponse.builder()
                 .success(true)
-                .message("만남 장소를 찾아드리겠습니다! 🗺️\n\n" +
+                .message("환승이 편리한 만남 장소를 찾아드리겠습니다! 🚇\n\n" +
                         "먼저 총 몇 명이 만나실 예정인가요?\n" +
                         "(예: 3명, 5명)")
                 .build();
     }
 
     private MidpointResponse handlePersonCountInput(Long userId, String userMessage, MidpointSession session) {
-        try {
+         try {
             int count = extractPersonCount(userMessage);
             if (count < 2) {
                 return MidpointResponse.builder()
                         .success(false)
-                        .message("최소 2명 이상이어야 중간위치를 계산할 수 있습니다.\n다시 인원수를 알려주세요.")
+                        .message("최소 2명 이상이어야 합니다. 다시 인원수를 알려주세요.")
                         .build();
             }
             session.setTotalPersons(count);
@@ -105,140 +97,367 @@ public class SmartMidpointService {
                             "이제 각자의 출발 위치를 알려주세요.\n" +
                             "(예: 강남역, 홍대입구역, 신림역)", count))
                     .build();
-        } catch (Exception e) {
+        } catch (IllegalArgumentException e) { // 구체적인 예외 처리
             return MidpointResponse.builder()
                     .success(false)
-                    .message("인원수를 정확히 입력해주세요.\n(예: 3명, 5명)")
+                    .message(e.getMessage() + "\n(예: 3명, 5명 또는 숫자만 입력)")
                     .build();
         }
+    }
+
+    // 위치 입력 처리 및 충분하면 바로 추천 시작
+    private Mono<MidpointResponse> handleLocationInputAndRecommend(Long userId, String userMessage, MidpointSession session) {
+        List<String> rawLocations = extractLocationsFromMessage(userMessage);
+        if (rawLocations.isEmpty()) {
+            return Mono.just(MidpointResponse.builder().success(false).message("위치를 입력해주세요. (예: 강남역)").build());
+        }
+
+        // 비동기 위치 검증 (GeocodingService 사용)
+        return Flux.fromIterable(rawLocations)
+                .flatMap(location -> Mono.fromCallable(() -> { // GeocodingService.getCoordinates가 동기이므로 Callable로 감싸기
+                            try {
+                                Coordinates coords = geocodingService.getCoordinates(location);
+                                return Map.entry(location, coords != null); // 성공 여부 반환
+                            } catch (Exception e) { // 혹시 모를 예외 처리
+                                log.error("Error geocoding '{}': {}", location, e.getMessage());
+                                return Map.entry(location, false);
+                            }
+                        })
+                )
+                .collectList()
+                .flatMap(results -> {
+                    // 결과 처리 및 세션 업데이트
+                    List<String> validLocations = results.stream().filter(Map.Entry::getValue).map(Map.Entry::getKey).collect(Collectors.toList());
+                    List<String> invalidLocations = results.stream().filter(entry -> !entry.getValue()).map(Map.Entry::getKey).collect(Collectors.toList());
+
+                    if (!validLocations.isEmpty()) {
+                        Set<String> currentLocations = new HashSet<>(session.getCollectedLocations());
+                        currentLocations.addAll(validLocations);
+                        session.setCollectedLocations(new ArrayList<>(currentLocations));
+                        log.info("User {} added valid locations: {}", userId, validLocations);
+                    }
+
+                    int collected = session.getCollectedLocations().size();
+                    int needed = session.getTotalPersons();
+
+                    StringBuilder responseMessage = new StringBuilder();
+                    if (!validLocations.isEmpty()) responseMessage.append(String.format("✅ %s 위치가 추가되었습니다!\n\n", String.join(", ", validLocations)));
+                    if (!invalidLocations.isEmpty()) responseMessage.append(String.format("❌ '%s' 위치는 찾을 수 없었어요. 더 자세한 주소나 장소명으로 다시 시도해주세요.\n\n", String.join(", ", invalidLocations)));
+
+                    // 충분한 위치가 수집되었는지 확인
+                    if (collected >= needed) {
+                        userSessions.remove(userId); // 추천 시작 시 세션 종료
+                        List<String> finalLocations = session.getCollectedLocations().stream().limit(needed).collect(Collectors.toList());
+                        responseMessage.append(String.format("모든 위치(%d/%d) 수집 완료!\n수집된 위치: %s\n\n🔍 환승 편리한 역을 찾는 중...", collected, needed, String.join(", ", finalLocations)));
+                        log.info("All locations collected for user {}. Starting recommendation...", userId);
+
+                        // 추천 로직 호출
+                        return calculateAndRecommendHybrid(finalLocations)
+                                .map(res -> {
+                                    // 최종 메시지 앞에 진행 메시지 추가
+                                    res.setMessage(responseMessage.toString() + "\n\n" + res.getMessage());
+                                    return res;
+                                });
+                    } else {
+                        // 위치 더 필요
+                        responseMessage.append(String.format("현재 수집된 위치 (%d/%d):\n%s\n\n추가로 %d개의 위치가 더 필요합니다.", collected, needed, String.join(", ", session.getCollectedLocations()), needed - collected));
+                        userSessions.put(userId, session); // 세션 업데이트
+                        log.info("User {} needs {} more locations.", userId, needed - collected);
+                        return Mono.just(MidpointResponse.builder().success(true).message(responseMessage.toString()).build());
+                    }
+                });
+    }
+
+    // [핵심 로직] Google Places + ODsay 하이브리드 방식
+    private Mono<MidpointResponse> calculateAndRecommendHybrid(List<String> locations) {
+        log.info("Hybrid recommendation started for locations: {}", locations);
+
+        // 1. 모든 위치 좌표 조회 (GeocodingService 사용)
+        return Flux.fromIterable(locations)
+                .flatMap(location -> Mono.fromCallable(() -> geocodingService.getCoordinates(location)) // 동기 호출 래핑
+                                         .map(Optional::ofNullable) // null 가능성 처리
+                                         .defaultIfEmpty(Optional.empty()) // 예외 발생 시 빈 Optional
+                )
+                .collectList()
+                .flatMap(optionalCoordinatesList -> {
+                    // 유효한 좌표만 추출
+                    List<Coordinates> coordinatesList = optionalCoordinatesList.stream()
+                            .filter(Optional::isPresent)
+                            .map(Optional::get)
+                            .collect(Collectors.toList());
+
+                    if (coordinatesList.size() != locations.size()) {
+                        log.warn("Failed to get coordinates for all locations. {} out of {}", coordinatesList.size(), locations.size());
+                        // 실패한 위치 정보 포함하여 메시지 개선
+                        List<String> failedLocations = new ArrayList<>(locations);
+                        // coordinatesList에 있는 위치 찾아서 제거 (좌표->위치 역변환 필요 또는 다른 방식)
+                        // 임시 메시지:
+                        return Mono.just(MidpointResponse.builder().success(false).message("일부 위치의 좌표를 찾을 수 없습니다. 다시 시도해주세요.").build());
+                    }
+
+                    // 2. 지리적 중간 지점 계산
+                    Coordinates geometricMidpoint = calculateMidpointInternal(coordinatesList);
+                    log.info("Calculated geometric midpoint: lat={}, lng={}", geometricMidpoint.getLat(), geometricMidpoint.getLng());
+
+                    // 3. 중간 지점 근처 '지하철역' 검색 (Google Places API)
+                    List<GooglePlace> nearbySubwayStationsGoogle;
+                    try {
+                        // MidpointService의 getNearbyPlaces 호출 (동기)
+                        nearbySubwayStationsGoogle = midpointService.getNearbyPlaces(geometricMidpoint, "subway_station");
+                    } catch (LocationNotFoundException e) {
+                        log.warn("No nearby subway stations found via Google Places: {}", e.getMessage());
+                        return Mono.just(MidpointResponse.builder().success(false).message("중간 지점 근처에서 지하철역을 찾을 수 없습니다.").build());
+                    } catch (Exception e) { // 그 외 Google API 호출 예외
+                        log.error("Error calling Google Places API: {}", e.getMessage(), e);
+                        return Mono.just(MidpointResponse.builder().success(false).message("Google Places API 호출 중 오류 발생").build());
+                    }
+
+                    if (nearbySubwayStationsGoogle.isEmpty()) {
+                        log.warn("Google Places returned an empty list for subway stations.");
+                        return Mono.just(MidpointResponse.builder().success(false).message("중간 지점 근처에서 지하철역을 찾을 수 없습니다.").build());
+                    }
+                    log.info("Found {} potential subway stations via Google Places.", nearbySubwayStationsGoogle.size());
+
+                    // 4. Google Place -> ODsay Station ID 매핑 및 환승 정보 조회 (비동기 처리)
+                    return Flux.fromIterable(nearbySubwayStationsGoogle)
+                            // 각 Google Place 결과에 대해 ODsay stationID 및 환승 정보 찾기
+                            .flatMap(googlePlace ->
+                                findOdsayStationAndLanes(googlePlace) // 아래 정의된 헬퍼 메소드 호출
+                                    .map(Optional::of) // 결과 Optional로 래핑
+                                    .defaultIfEmpty(Optional.empty()) // 에러/결과 없음 시 빈 Optional
+                            )
+                            .filter(Optional::isPresent) // 유효한 결과만 필터링
+                            .map(Optional::get)
+                            .collectList()
+                            .flatMap(filteredStations -> { // 5. 최종 결과 처리
+                                // ... (Fallback 및 최종 응답 생성 로직은 이전 답변과 동일) ...
+                                if (filteredStations.isEmpty()) {
+                                    log.warn("No stations met the transfer criteria after ODsay lookup.");
+                                    // Fallback: Google 결과 중 첫 번째 역의 정보만 조회해서 반환
+                                    if (nearbySubwayStationsGoogle.isEmpty()) { // 혹시 모를 방어 코드
+                                        return Mono.just(MidpointResponse.builder().success(false).message("추천할 지하철역을 찾지 못했습니다.").build());
+                                    }
+                                    GooglePlace closestGoogleStation = nearbySubwayStationsGoogle.get(0);
+                                    return findOdsayStationAndLanes(closestGoogleStation) // Fallback용 재호출
+                                        .map(fallbackStation -> {
+                                            List<RecommendedStation> fallbackList = List.of(fallbackStation);
+                                            return generateFinalResponse(locations, fallbackList, "조건에 맞는 환승역이 없어 가장 가까운 역 1곳을 추천합니다.");
+                                        })
+                                        .defaultIfEmpty(MidpointResponse.builder().success(false).message("가장 가까운 역의 환승 정보 조회에도 실패했습니다.").build());
+
+                                } else {
+                                    // 성공: 환승 많은 순 정렬 및 중복 제거, GPT 호출
+                                    filteredStations.sort(Comparator.comparing(RecommendedStation::getLaneCount).reversed());
+                                    List<RecommendedStation> distinctStations = filteredStations.stream()
+                                            .collect(Collectors.collectingAndThen(
+                                                    Collectors.toMap(RecommendedStation::getStationName, rs -> rs, (rs1, rs2) -> rs1.getLaneCount() >= rs2.getLaneCount() ? rs1 : rs2), // 이름 같으면 환승 많은 것 유지
+                                                    map -> new ArrayList<>(map.values())
+                                            ));
+                                    distinctStations.sort(Comparator.comparing(RecommendedStation::getLaneCount).reversed());
+
+                                    log.info("Filtered, distinct, and sorted recommended stations: {}", distinctStations.stream().map(RecommendedStation::getStationName).collect(Collectors.toList()));
+                                    return Mono.just(generateFinalResponse(locations, distinctStations, null));
+                                }
+                            });
+                })
+                .onErrorResume(Exception.class, e -> { // 전체적인 에러 처리
+                    log.error("Unexpected error during hybrid recommendation: {}", e.getMessage(), e);
+                    return Mono.just(MidpointResponse.builder().success(false).message("추천 장소 검색 중 오류가 발생했습니다.").build());
+                });
     }
 
     /**
-     * 위치 입력 처리
+     * Google Place 정보를 받아 가장 가까운 ODsay 지하철역 ID를 찾고,
+     * 해당 역의 환승 정보를 조회하여 RecommendedStation 객체를 만드는 헬퍼 메소드 (비동기)
      */
-    private MidpointResponse handleLocationInput(Long userId, String userMessage, MidpointSession session) {
-        List<String> rawLocations = extractLocationsFromMessage(userMessage);
-        if (rawLocations.isEmpty()) {
-            return MidpointResponse.builder().success(false).message("위치를 찾을 수 없습니다. (예: 강남역)").build();
+    private Mono<RecommendedStation> findOdsayStationAndLanes(GooglePlace googlePlace) {
+        String googleStationName = googlePlace.getName();
+        // Google Place 좌표 가져오기 (Null 체크 추가)
+        if (googlePlace.getGeometry() == null || googlePlace.getGeometry().getLocation() == null) {
+             log.warn("Google Place '{}' has no geometry/location info.", googleStationName);
+             // *** 반환 타입을 Mono<RecommendedStation>으로 명시 ***
+             return Mono.<RecommendedStation>empty();
         }
+        Coordinates coords = new Coordinates(
+            googlePlace.getGeometry().getLocation().getLat(),
+            googlePlace.getGeometry().getLocation().getLng()
+        );
 
-        List<String> validLocations = new ArrayList<>();
-        List<String> invalidLocations = new ArrayList<>();
+        // ODsay searchStation API 호출 (이름 기반 검색)
+        return odysseyTransitService.searchStationByName(googleStationName)
+             // *** flatMap의 반환 타입은 Mono여야 함 ***
+            .flatMap(searchResultStations -> { // searchResultStations is List<StationInfo>
+                if (searchResultStations.isEmpty()) {
+                    log.warn("ODsay searchStation found no results for '{}'", googleStationName);
+                    // *** Flux.empty() -> Mono.empty() ***
+                    return Mono.<RecommendedStation>empty();
+                }
 
-        // 입력된 위치들을 하나씩 즉시 검증
-        for (String location : rawLocations) {
-            try {
-                // midpointService를 사용해 위치 유효성 검사
-                midpointService.getCoordinatesForLocation(location);
-                // 성공하면 유효한 위치 목록에 추가
-                validLocations.add(location);
-            } catch (LocationNotFoundException e) {
-                // 실패하면 유효하지 않은 위치 목록에 추가
-                invalidLocations.add(location);
-            }
-        }
+                // 결과 중 stationClass=2(지하철)이고 Google 좌표와 가장 가까운 ODsay 역 찾기 (동기 로직)
+                Optional<OdsaySearchStationResponse.StationInfo> closestOdsayStationOpt = searchResultStations.stream()
+                    .filter(s -> s.getStationClass() != null && s.getStationClass() == 2)
+                    .filter(s -> s.getY() != null && s.getX() != null && s.getY() != 0 && s.getX() != 0)
+                    .min(Comparator.comparingDouble(s ->
+                        calculateDistance(coords.getLat(), coords.getLng(), s.getY(), s.getX())
+                    ));
 
-        // 유효한 위치들만 세션에 추가
-        if (!validLocations.isEmpty()) {
-            session.getCollectedLocations().addAll(validLocations);
-            session.setCollectedLocations(session.getCollectedLocations().stream().distinct().collect(Collectors.toList()));
-        }
+                if (closestOdsayStationOpt.isEmpty()) {
+                    log.warn("ODsay searchStation results for '{}' contained no suitable subway station.", googleStationName);
+                    // *** Flux.empty() -> Mono.empty() ***
+                    return Mono.<RecommendedStation>empty();
+                }
 
-        int collected = session.getCollectedLocations().size();
-        int needed = session.getTotalPersons();
+                OdsaySearchStationResponse.StationInfo closestOdsayStation = closestOdsayStationOpt.get();
+                if (closestOdsayStation.getStationID() == null) {
+                    log.error("Found ODsay station '{}' but its stationID is null!", closestOdsayStation.getStationName());
+                    // *** Flux.empty() -> Mono.empty() ***
+                    return Mono.<RecommendedStation>empty();
+                }
+                int odsayStationId = closestOdsayStation.getStationID();
+                log.info("Mapped Google Place '{}' to ODsay Station '{}' (ID: {})", googleStationName, closestOdsayStation.getStationName(), odsayStationId);
 
-        // 응답 메시지 생성
-        StringBuilder responseMessage = new StringBuilder();
-        if (!validLocations.isEmpty()) {
-            responseMessage.append(String.format("✅ %s 위치가 추가되었습니다!\n\n", String.join(", ", validLocations)));
-        }
-        if (!invalidLocations.isEmpty()) {
-            responseMessage.append(String.format("❌ '%s' 위치는 찾을 수 없었어요. 더 자세한 주소나 장소명으로 다시 시도해주세요.\n\n", String.join(", ", invalidLocations)));
-        }
-
-        // 모든 위치가 수집되었는지 확인
-        if (collected >= needed) {
-            session.setState(MidpointSession.SessionState.WAITING_FOR_PURPOSE);
-            responseMessage.append(String.format("모든 위치(%d/%d)가 수집되었습니다.\n\n수집된 위치: %s\n\n이제 어떤 목적으로 만나시는지 알려주세요.\n(예: 회의, 식사, 스터디)",
-                    collected, needed, String.join(", ", session.getCollectedLocations())));
-        } else {
-            responseMessage.append(String.format("현재 수집된 위치 (%d/%d):\n%s\n\n추가로 %d개의 위치가 더 필요합니다.",
-                    collected, needed, String.join(", ", session.getCollectedLocations()), needed - collected));
-        }
-
-        userSessions.put(userId, session);
-        return MidpointResponse.builder().success(true).message(responseMessage.toString()).build();
+                // ODsay subwayStationInfo API 호출하여 환승 정보 얻기 (이 부분은 이미 Mono 반환)
+                return odysseyTransitService.getStationInfo(odsayStationId)
+                    .flatMap(stationInfoResponse -> {
+                        Set<String> uniqueLanes = stationInfoResponse.collectUniqueLaneNames();
+                        int laneCount = uniqueLanes.size();
+                        boolean hasAirportLine = uniqueLanes.stream().anyMatch(l -> l.contains("공항철도"));
+                        if (laneCount >= 2 || hasAirportLine) {
+                            RecommendedStation recommended = new RecommendedStation(googleStationName, coords.getLng(), coords.getLat(), uniqueLanes, laneCount);
+                            return Mono.just(recommended);
+                        } else {
+                            log.debug("Station '{}' (ID: {}) with {} lanes ({}) did not meet criteria.", googleStationName, odsayStationId, laneCount, uniqueLanes);
+                            return Mono.<RecommendedStation>empty(); // 타입 명시
+                        }
+                    }); // getStationInfo flatMap 종료
+            }) // searchStationByName 결과 처리 flatMap 종료
+            // .next() 제거됨 (flatMap이 이미 Mono 반환)
+            .onErrorResume(e -> { // findOdsayStationAndLanes 내부의 전체적인 에러 처리
+                 log.error("Error in findOdsayStationAndLanes for '{}': {}", googleStationName, e.getMessage());
+                 // *** 타입을 명시적으로 지정 ***
+                 return Mono.<RecommendedStation>empty();
+            });
     }
 
-    private MidpointResponse handlePurposeInput(Long userId, String userMessage, MidpointSession session) {
-        session.setPurpose(userMessage.trim());
-        session.setState(MidpointSession.SessionState.WAITING_FOR_PREFERENCES);
-        userSessions.put(userId, session);
+    // 위도, 경도 기반 거리 계산 (Haversine formula - 근사치)
+    private double calculateDistance(double lat1, double lon1, double lat2, double lon2) {
+        if (lat2 == 0 || lon2 == 0) return Double.MAX_VALUE; // 좌표 없으면 최대 거리
+
+        final int R = 6371; // 지구 반지름 (km)
+
+        double latDistance = Math.toRadians(lat2 - lat1);
+        double lonDistance = Math.toRadians(lon2 - lon1);
+        double a = Math.sin(latDistance / 2) * Math.sin(latDistance / 2)
+                + Math.cos(Math.toRadians(lat1)) * Math.cos(Math.toRadians(lat2))
+                * Math.sin(lonDistance / 2) * Math.sin(lonDistance / 2);
+        double c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+
+        return R * c * 1000; // 미터 단위 반환
+    }
+
+
+    // --- generateFinalResponse, generateAIRecommendationODsay, 유틸리티, reset ---
+    // (이전 답변 코드 유지)
+    private MidpointResponse generateFinalResponse(List<String> locations,
+                                                    List<RecommendedStation> recommendedStations,
+                                                    String fallbackMessage) {
+         String topStationsText = recommendedStations.stream()
+                .limit(3)
+                .map(s -> String.format("- %s (%d개 노선: %s)",
+                        s.getStationName(), s.getLaneCount(), s.getUniqueLanes()))
+                .collect(Collectors.joining("\n"));
+
+        String gptMessage;
+        if (fallbackMessage != null) {
+            gptMessage = fallbackMessage + "\n\n" + topStationsText;
+        } else if (recommendedStations.isEmpty()) {
+             gptMessage = "추천할 만한 환승역을 찾지 못했습니다. 입력한 위치를 다시 확인해주세요.";
+        }
+         else {
+            gptMessage = generateAIRecommendationODsay(locations, recommendedStations);
+        }
+
+        // MidpointResponse DTO 구조에 맞게 수정
+        // 중간 좌표 계산 다시 필요 시 추가
+        Coordinates midpointCoords = null;
+        try {
+             // 이 시점에는 locations에 대한 좌표가 없을 수 있으므로, 다시 계산 필요 시 주의
+             // List<Coordinates> coordsList = locations.stream().map(loc -> geocodingService.getCoordinates(loc)).filter(Objects::nonNull).collect(Collectors.toList());
+             // if (!coordsList.isEmpty()) midpointCoords = calculateMidpointInternal(coordsList);
+        } catch (Exception e) {
+            log.warn("Could not recalculate midpoint for response DTO: {}", e.getMessage());
+        }
 
         return MidpointResponse.builder()
                 .success(true)
-                .message(String.format("만남 목적: '%s'\n\n" +
-                        "좋습니다! 마지막으로 선호하는 장소 유형이 있다면 알려주세요.\n" +
-                        "(예: 조용한 카페, 가성비 좋은 식당, 지하철역 근처)", session.getPurpose()))
+                .message(gptMessage)
+                .recommendedStations(recommendedStations)
+                 // 기존 필드 (선택적)
+                 .midpointCoordinates(midpointCoords) // null일 수 있음
+                 .midpointAddress(recommendedStations.isEmpty() ? "추천 역 없음" : recommendedStations.get(0).getStationName() + " 근처") // 대표 주소
                 .build();
     }
 
-    private MidpointResponse handlePreferencesInput(Long userId, String userMessage, MidpointSession session) {
-        session.setPreferences(userMessage.trim());
-        userSessions.remove(userId);
+     private String generateAIRecommendationODsay(List<String> locations,
+                                                  List<RecommendedStation> candidates) {
+         // ... (GPT 프롬프트 및 호출 로직은 이전과 동일, candidates가 비어있을 때 처리 추가) ...
+          if (candidates.isEmpty()) {
+             return "추천할 만한 환승역을 찾지 못했습니다.";
+         }
 
-        List<String> finalLocations = session.getCollectedLocations().subList(0, session.getTotalPersons());
-        return calculateAndRecommend(finalLocations, session.getPurpose(), session.getPreferences());
-    }
+         StringBuilder candidatesText = new StringBuilder();
+        for (int i = 0; i < Math.min(candidates.size(), 3); i++) {
+            RecommendedStation station = candidates.get(i);
+            candidatesText.append(String.format("%d. 역 이름: %s, 지나는 노선: %s (%d개)\n",
+                    i + 1, station.getStationName(), station.getUniqueLanes(), station.getLaneCount()));
+        }
 
-    private MidpointResponse calculateAndRecommend(List<String> locations, String purpose, String preferences) {
         try {
-            log.info("Smart recommendation process started for locations: {}", locations);
+            String systemPrompt = String.format("""
+                당신은 "환승역 추천 요약 AI"입니다. **매우 간결하게** 답변해야 합니다.
 
-            Coordinates geometricMidpoint = midpointService.calculateGeometricMidpoint(locations);
-            log.info("Calculated geometric midpoint: {}", geometricMidpoint);
+                [입력 정보]
+                - 참석자 출발 위치: %s
+                - 추천 지하철역 후보 목록 (환승 많은 순):
+                %s
 
-            List<GooglePlace> candidates = midpointService.getNearbyPlaces(geometricMidpoint, preferences);
-
-            GooglePlace bestPlace = candidates.stream()
-                .max(Comparator.comparing(GooglePlace::getRating))
-                .orElse(candidates.get(0));
-
-            Coordinates finalCoordinates = new Coordinates(
-                    bestPlace.getGeometry().getLocation().getLat(),
-                    bestPlace.getGeometry().getLocation().getLng()
-            );
-            String finalAddress = bestPlace.getName() + " (" + bestPlace.getVicinity() + ")";
-
-            String aiRecommendation = generateAIRecommendation(
-                locations,
-                finalAddress,
-                purpose,
-                preferences,
-                candidates
+                [지시 사항]
+                1. 위 '추천 지하철역 후보 목록'에서 **가장 환승이 편리한 역 1곳** (최대 2곳까지만)을 선정하세요.
+                2. 선정된 각 역에 대해 다음 정보만 **간단히** 포함하여 **한두 문장**으로 추천 이유를 요약하세요:
+                   - 역 이름
+                   - 총 환승 가능 노선 수
+                   - 주요 노선 이름 목록 (괄호 안에 쉼표로 구분)
+                3. **절대로** 경로를 설명하거나 길게 부연 설명하지 마세요.
+                4. 최종 답변 형식 예시:
+                   "가장 추천하는 역은 **OO역**입니다. 총 N개 노선(A호선, B호선, C선) 환승이 가능하여 편리합니다."
+                   (만약 2곳 추천 시: "추천 역은 OO역과 XX역입니다. OO역은 N개 노선(...), XX역은 M개 노선(...) 환승이 가능합니다.")
+                """,
+                    String.join(", ", locations),
+                    candidatesText.toString()
             );
 
-            return MidpointResponse.builder()
-                    .midpointCoordinates(finalCoordinates)
-                    .midpointAddress(finalAddress)
-                    .success(true)
-                    .message(aiRecommendation)
+            ChatCompletionRequest request = ChatCompletionRequest.builder()
+                    .model(gpt5MiniModel)
+                    .messages(List.of(new ChatMessage("system", systemPrompt)))
+                    .maxCompletionTokens(gpt5MiniMaxTokens)
+                    .temperature(gpt5MiniTemperature)
                     .build();
 
-        } catch (LocationNotFoundException e) {
-            log.error("Could not find locations during smart recommendation: {}", e.getMessage());
-            return MidpointResponse.builder().success(false).message(e.getMessage()).build();
-        } catch (Exception e) {
-            log.error("Error in calculateAndRecommend: {}", e.getMessage(), e);
-            // [수정] 예외 발생 시의 fallback 로직을 단순화.
-            // 이제 findMidpoint를 호출하지 않고, 간단한 에러 메시지만 반환.
-            return MidpointResponse.builder().success(false).message("AI 추천 생성 중 오류가 발생했습니다.").build();
-        }
-    }
+            ChatCompletionResult result = gpt5MiniService.createChatCompletion(request);
+            log.info("GPT5 Mini recommendation generated successfully based on ODsay station list.");
+            return result.getChoices().get(0).getMessage().getContent();
 
-    private List<String> extractLocationsFromMessage(String message) {
+        } catch (Exception e) {
+            log.error("Error generating AI recommendation using ODsay results: {}", e.getMessage(), e);
+            RecommendedStation topStation = candidates.get(0); // candidates는 비어있지 않음이 보장됨
+            return String.format("AI 추천 생성에 실패했습니다.\n\n환승이 가장 편리한 역은 '%s'(%d개 노선: %s) 입니다.",
+                                topStation.getStationName(), topStation.getLaneCount(), topStation.getUniqueLanes());
+        }
+     }
+
+     private List<String> extractLocationsFromMessage(String message) {
         List<String> locations = new ArrayList<>();
-        String[] parts = message.split("[,\\s]+");
+        String[] parts = message.split("[,\\s\\t]+");
         for (String part : parts) {
             part = part.trim();
             if (!part.isEmpty() && part.length() > 1) {
@@ -246,98 +465,47 @@ public class SmartMidpointService {
             }
         }
         return locations;
-    }
+     }
 
     private int extractPersonCount(String message) {
-        java.util.regex.Pattern pattern = java.util.regex.Pattern.compile("(\\d+)");
-        java.util.regex.Matcher matcher = pattern.matcher(message);
-        if (matcher.find()) return Integer.parseInt(matcher.group(1));
-        throw new IllegalArgumentException("인원수를 파악할 수 없습니다.");
-    }
-
-    private String generateAIRecommendation(
-            List<String> locations,
-            String finalMidpointAddress, // 이제 MidpointResponse 객체 대신 주소 문자열만 받음
-            String purpose,
-            String preferences,
-            List<GooglePlace> candidates) {
-
-        // ... (내부 프롬프트 로직은 이전과 동일) ...
-        StringBuilder candidatesText = new StringBuilder();
-        for (int i = 0; i < candidates.size(); i++) {
-            GooglePlace place = candidates.get(i);
-            candidatesText.append(String.format("%d. 이름: %s, 주소: %s, 평점: %.1f\n",
-                    i + 1, place.getName(), place.getVicinity(), place.getRating()));
+        Pattern pattern = Pattern.compile("(\\d+)");
+        Matcher matcher = pattern.matcher(message);
+        if (matcher.find()) {
+            try {
+                return Integer.parseInt(matcher.group(1));
+            } catch (NumberFormatException e) { /* ignore */ }
         }
         try {
-            String systemPrompt = String.format("""
-                당신은 주어진 장소 목록 내에서만 답변해야 하는 "장소 추천 AI"입니다. 당신의 지식을 사용하지 마세요.
-
-                [입력 정보]
-                - 참석자들의 출발 위치: %s
-                - 대표 중간 지점: %s
-                - 만남의 목적: "%s"
-                - 선호하는 장소 유형: "%s"
-
-                [!!! 가장 중요한 규칙 !!!]
-                - **반드시** 아래 제공된 "장소 후보 목록" **안에서만** 3곳을 골라 추천해야 합니다.
-                - 목록에 없는 장소는 **절대로** 지어내거나 언급해서는 안 됩니다.
-
-                [장소 후보 목록]
-                %s
-
-                [지시 사항]
-                1. 위 '장소 후보 목록'을 분석하여, '만남의 목적'과 '선호하는 장소 유형'에 가장 적합한 장소 3곳을 선정하세요.
-                2. 각 장소에 대해 "추천 이유"를 반드시 포함하여 설명하고, "이름", "주소", "평점" 정보를 정확히 기재하세요.
-
-                [답변 예시]
-                1. **[장소 이름]**
-                   - 주소: [목록에 있는 주소]
-                   - 평점: [목록에 있는 평점]
-                   - 추천 이유: [목적과 선호도를 반영하여, 왜 이 목록에서 이 장소를 골랐는지 설명]
-                """,
-                String.join(", ", locations),
-                finalMidpointAddress,
-                purpose,
-                preferences,
-                candidatesText.toString()
-            );
-            ChatCompletionRequest request = ChatCompletionRequest.builder().model(gpt4Model).messages(List.of(new ChatMessage("system", systemPrompt))).maxTokens(maxTokens).temperature(temperature).build();
-            ChatCompletionResult result = gpt4Service.createChatCompletion(request);
-            log.debug("GPT-4 recommendation generated successfully based on provided list.");
-            return result.getChoices().get(0).getMessage().getContent();
-        } catch (Exception e) {
-            log.error("Error generating AI recommendation: {}", e.getMessage(), e);
-            return String.format("AI 추천 생성에 실패했습니다. 계산된 중간 지점은 '%s' 입니다.", finalMidpointAddress);
+            return Integer.parseInt(message.trim());
+        } catch (NumberFormatException e) {
+             throw new IllegalArgumentException("인원수를 파악할 수 없습니다. 숫자만 입력해주세요.");
         }
     }
+
+     private Coordinates calculateMidpointInternal(List<Coordinates> coordinatesList) {
+        if (coordinatesList == null || coordinatesList.isEmpty()) {
+            throw new IllegalArgumentException("좌표 목록이 비어있습니다.");
+        }
+        double totalLat = 0.0, totalLng = 0.0;
+        for (Coordinates coords : coordinatesList) {
+            totalLat += coords.getLat();
+            totalLng += coords.getLng();
+        }
+        return new Coordinates(totalLat / coordinatesList.size(), totalLng / coordinatesList.size());
+     }
 
     public MidpointResponse resetAndStartOver(Long userId) {
         userSessions.remove(userId);
         return handleInitialRequest(userId, new MidpointSession());
     }
 
+    @Data // Lombok @Data 추가
     public static class MidpointSession {
         public enum SessionState {
-            INITIAL, WAITING_FOR_COUNT, COLLECTING_LOCATIONS, WAITING_FOR_PURPOSE, WAITING_FOR_PREFERENCES
+            INITIAL, WAITING_FOR_COUNT, COLLECTING_LOCATIONS
         }
-
         private SessionState state = SessionState.INITIAL;
         private int totalPersons;
         private List<String> collectedLocations = new ArrayList<>();
-        private String purpose;
-        private String preferences;
-
-        // Getters and Setters
-        public SessionState getState() { return state; }
-        public void setState(SessionState state) { this.state = state; }
-        public int getTotalPersons() { return totalPersons; }
-        public void setTotalPersons(int totalPersons) { this.totalPersons = totalPersons; }
-        public List<String> getCollectedLocations() { return collectedLocations; }
-        public void setCollectedLocations(List<String> collectedLocations) { this.collectedLocations = collectedLocations; }
-        public String getPurpose() { return purpose; }
-        public void setPurpose(String purpose) { this.purpose = purpose; }
-        public String getPreferences() { return preferences; }
-        public void setPreferences(String preferences) { this.preferences = preferences; }
     }
 }

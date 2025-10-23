@@ -18,7 +18,7 @@
         .chat-history { margin-top: 20px; height: 400px; overflow-y: auto; border: 1px solid #e5e5e5; padding: 15px; background-color: #fff; border-radius: 8px; }
         .message { margin-bottom: 12px; padding: 10px 15px; border-radius: 18px; max-width: 85%; line-height: 1.5; }
         .user-message { background-color: #007aff; color: white; margin-left: auto; border-bottom-right-radius: 4px; }
-        .bot-message { background-color: #e9ecef; color: #333; margin-right: auto; border-bottom-left-radius: 4px; white-space: pre-wrap; }
+        .bot-message { background-color: #e9ecef; color: #333; margin-right: auto; border-bottom-left-radius: 4px; white-space: pre-wrap; } /* white-space 추가 */
         small { display: block; text-align: center; color: #888; margin-top: 10px; }
     </style>
 </head>
@@ -29,7 +29,7 @@
         <div class="chat-section">
             <label for="smartMessage">메시지 입력:</label>
             <textarea id="smartMessage" placeholder="AI의 질문에 답변해주세요..."></textarea>
-            <small>AI 질문 순서: 인원수 → 위치 → 목적 → 선호도</small>
+            <small>AI 질문 순서: 인원수 → 각자 출발 위치</small>
 
             <button onclick="sendMessage()">전송</button>
             <button class="reset-btn" onclick="resetSession()">대화 초기화</button>
@@ -52,35 +52,83 @@
 
             addToChatHistory('user', message);
             messageInput.value = '';
+            // 메시지 전송 중 버튼 비활성화 (선택적)
+            toggleButtons(false);
 
             try {
+                // [수정] 토큰 처리 로직은 백엔드에서 하므로 제거 또는 주석 처리
+                // const token = localStorage.getItem('access_token');
+                // if (!token) {
+                //     addToChatHistory('bot', '로그인이 필요합니다.');
+                //     toggleButtons(true);
+                //     return;
+                // }
+
                 const response = await fetch('/api/midpoint/smart', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: {
+                        'Content-Type': 'application/json',
+                        // 'Authorization': 'Bearer ' + token // 백엔드에서 Spring Security가 처리
+                    },
                     body: JSON.stringify({ message: message })
                 });
+
+                // HTTP 상태 코드 확인
+                if (!response.ok) {
+                    // 서버에서 JSON 형태의 에러 메시지를 보낼 경우 파싱 시도
+                    let errorMsg = `서버 오류 발생 (${response.status})`;
+                    try {
+                        const errorData = await response.json();
+                        errorMsg = errorData.message || errorMsg;
+                    } catch (e) { /* ignore parsing error */ }
+                    throw new Error(errorMsg);
+                }
 
                 const data = await response.json();
                 addToChatHistory('bot', data.message || JSON.stringify(data, null, 2));
 
             } catch (error) {
                 addToChatHistory('bot', '오류 발생: ' + error.message);
+            } finally {
+                // 메시지 처리 완료 후 버튼 활성화 (선택적)
+                toggleButtons(true);
             }
         }
 
         async function resetSession() {
+            // 리셋 중 버튼 비활성화 (선택적)
+            toggleButtons(false);
             try {
+                 // const token = localStorage.getItem('access_token');
+                // if (!token) {
+                //     addToChatHistory('bot', '로그인이 필요합니다.');
+                //     toggleButtons(true);
+                //     return;
+                // }
+
                 const response = await fetch('/api/midpoint/reset', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' }
+                    headers: {
+                        'Content-Type': 'application/json',
+                        // 'Authorization': 'Bearer ' + token
+                    }
                 });
 
+                if (!response.ok) {
+                    let errorMsg = `세션 초기화 실패 (${response.status})`;
+                    try { const errorData = await response.json(); errorMsg = errorData.message || errorMsg; } catch (e) {}
+                    throw new Error(errorMsg);
+                }
+
                 const data = await response.json();
-                chatHistory = [];
+                chatHistory = []; // 클라이언트 측 히스토리 초기화
                 addToChatHistory('bot', data.message || '세션이 초기화되었습니다. 처음부터 시작합니다.');
 
             } catch (error) {
                 addToChatHistory('bot', '세션 초기화 오류: ' + error.message);
+            } finally {
+                // 리셋 완료 후 버튼 활성화 (선택적)
+                toggleButtons(true);
             }
         }
 
@@ -95,24 +143,31 @@
             chatHistory.forEach(chat => {
                 const messageDiv = document.createElement('div');
                 messageDiv.className = `message ${chat.sender}-message`;
+                // 텍스트 내용으로 설정 (HTML 태그 방지)
                 messageDiv.textContent = chat.message;
                 chatDiv.appendChild(messageDiv);
             });
-            chatDiv.scrollTop = chatDiv.scrollHeight;
+            chatDiv.scrollTop = chatDiv.scrollHeight; // 항상 맨 아래로 스크롤
         }
 
-        // 페이지 로드 시 대화 시작
+        // 페이지 로드 시 대화 시작 (자동 리셋)
         document.addEventListener('DOMContentLoaded', function() {
             resetSession();
         });
 
-        // Enter 키로 메시지 전송
+        // Enter 키로 메시지 전송 (Shift+Enter는 줄바꿈)
         document.getElementById('smartMessage').addEventListener('keypress', function(e) {
             if (e.key === 'Enter' && !e.shiftKey) {
-                e.preventDefault();
+                e.preventDefault(); // 기본 Enter 동작(줄바꿈) 방지
                 sendMessage();
             }
         });
+
+        // 버튼 활성화/비활성화 함수 (선택적)
+        function toggleButtons(enabled) {
+            document.querySelectorAll('button').forEach(btn => btn.disabled = !enabled);
+            document.querySelector('textarea').disabled = !enabled;
+        }
     </script>
 </body>
 </html>

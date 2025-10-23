@@ -89,6 +89,7 @@ dependencies {
 
     // OpenAI Java SDK
     implementation 'com.theokanning.openai-gpt3-java:service:0.18.2'
+    implementation("com.openai:openai-java:4.6.1")
 
     // Jackson 스타터
     implementation "com.fasterxml.jackson.core:jackson-core:${jacksonVersion}"
