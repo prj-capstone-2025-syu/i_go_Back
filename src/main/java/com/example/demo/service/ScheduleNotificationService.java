@@ -29,7 +29,7 @@ public class ScheduleNotificationService {
     private final NotificationRepository notificationRepository;
     private final FCMService fcmService;
     private final RoutineService routineService;
-    private final WeatherApiService weatherApiService; // 날씨 서비스 추가
+    private final WeatherApiService weatherApiService;
     private final TransportService transportService;
     private final OdysseyTransitService odysseyTransitService;
 
@@ -70,46 +70,64 @@ public class ScheduleNotificationService {
 
     // 루틴 시작 1시간 전 알림 처리 (날씨 정보 포함)
     private void processRoutineStartReminders(LocalDateTime now) {
-        LocalDateTime oneHourLater = now.plusHours(1);
-        // 1분 범위로 검색하여 정확한 시간 매칭 실패 방지
-        LocalDateTime searchEndTime = oneHourLater.plusMinutes(1);
+        // 루틴 소요 시간을 고려하여 약속 시간 검색 범위를 넓게 설정 (현재 시간 + 1시간 ~ 현재 시간 + 5시간)
+        // 이는 루틴의 최대 소요 시간을 4시간으로 가정하는 것
+        LocalDateTime searchStart = now.plusHours(1);
+        LocalDateTime searchEnd = now.plusHours(5);
 
-        log.info("🔍 [ScheduleNotificationService] 1시간 전 알림 처리 시작 - 현재시간: {}, 검색범위: {} ~ {}",
-                now, oneHourLater, searchEndTime);
+        log.info("🔍 [ScheduleNotificationService] 1시간 전 알림 처리 시작 - 현재시간: {}, 약속시간 검색범위: {} ~ {}",
+                now, searchStart, searchEnd);
 
-        // 1시간 후 시작되는 루틴이 포함된 PENDING 상태의 스케줄들 조회 (시간 범위 사용)
-        List<Schedule> upcomingRoutineSchedules = scheduleRepository.findByStartTimeAndStatusAndRoutineIdNotNull(
-                oneHourLater, searchEndTime, Schedule.ScheduleStatus.PENDING);
+        // 검색 범위 내의 루틴이 포함된 PENDING 상태의 스케줄들 조회
+        List<Schedule> candidateSchedules = scheduleRepository.findByStartTimeAndStatusAndRoutineIdNotNull(
+                searchStart, searchEnd, Schedule.ScheduleStatus.PENDING);
 
-        log.info("📋 [ScheduleNotificationService] 1시간 후 시작되는 루틴 스케줄 {}개 발견", upcomingRoutineSchedules.size());
+        log.info("📋 [ScheduleNotificationService] 1시간 전 알림 후보 스케줄 {}개 발견", candidateSchedules.size());
 
-        // 디버깅용 로그 추가
-        for (Schedule schedule : upcomingRoutineSchedules) {
-            log.debug("🔎 [ScheduleNotificationService] 발견된 스케줄 - ID: {}, 제목: '{}', 시작시간: {}, 루틴ID: {}",
-                    schedule.getId(), schedule.getTitle(), schedule.getStartTime(), schedule.getRoutineId());
-        }
+        for (Schedule schedule : candidateSchedules) {
+            try {
+                // 각 스케줄의 실제 루틴 시작 시간 계산
+                List<CalculatedRoutineItemTime> calculatedItems = routineService.calculateRoutineItemTimes(
+                        schedule.getRoutineId(), schedule.getStartTime());
 
-        for (Schedule schedule : upcomingRoutineSchedules) {
-            User user = schedule.getUser();
-            if (!isValidNotificationUser(user) || !user.isNotifyRoutineProgress()) {
-                log.debug("⚠️ [ScheduleNotificationService] 사용자 알림 조건 미충족 - User ID: {}, FCM Token: {}, NotifyRoutineProgress: {}",
-                        user.getId(),
-                        (user.getFcmToken() != null ? "있음" : "없음"),
-                        user.isNotifyRoutineProgress());
-                continue;
-            }
+                if (calculatedItems.isEmpty()) {
+                    continue;
+                }
 
-            // 이미 알림을 보냈는지 확인
-            Optional<Notification> existingNotification = notificationRepository
-                    .findByUserAndRelatedIdAndNotificationType(user, schedule.getId(), NOTIFICATION_TYPE_ROUTINE_START_REMINDER);
+                LocalDateTime routineStartTime = calculatedItems.get(0).getStartTime();
 
-            if (existingNotification.isEmpty()) {
-                log.info("📤 [ScheduleNotificationService] 1시간 전 알림 전송 시작 - Schedule ID: {}, User ID: {}",
-                        schedule.getId(), user.getId());
-                sendRoutineStartReminderWithWeather(schedule, user);
-            } else {
-                log.debug("🔄 [ScheduleNotificationService] 이미 1시간 전 알림 전송됨 - Schedule ID: {}, Notification ID: {}",
-                        schedule.getId(), existingNotification.get().getId());
+                // 루틴 시작 시간이 정확히 1시간 후인지 확인
+                if (routineStartTime.withSecond(0).withNano(0).isEqual(now.plusHours(1))) {
+                    log.debug("🎯 [ScheduleNotificationService] 알림 대상 스케줄 찾음 - ID: {}, 제목: '{}', 약속시간: {}, 루틴시작시간: {}",
+                            schedule.getId(), schedule.getTitle(), schedule.getStartTime(), routineStartTime);
+
+                    User user = schedule.getUser();
+                    if (!isValidNotificationUser(user) || !user.isNotifyRoutineProgress()) {
+                        log.debug("⚠️ [ScheduleNotificationService] 사용자 알림 조건 미충족 - User ID: {}, FCM Token: {}, NotifyRoutineProgress: {}",
+                                user.getId(),
+                                (user.getFcmToken() != null ? "있음" : "없음"),
+                                user.isNotifyRoutineProgress());
+                        continue;
+                    }
+
+                    // 이미 알림을 보냈는지 확인
+                    log.debug("🔍 [NotificationRepository] 중복 알림 확인 시도 - User ID: {}, Related ID: {}, Type: {}",
+                            user.getId(), schedule.getId(), NOTIFICATION_TYPE_ROUTINE_START_REMINDER);
+                    Optional<Notification> existingNotification = notificationRepository
+                            .findByUserAndRelatedIdAndNotificationType(user, schedule.getId(), NOTIFICATION_TYPE_ROUTINE_START_REMINDER);
+
+                    if (existingNotification.isEmpty()) {
+                        log.info("📤 [ScheduleNotificationService] 1시간 전 알림 전송 시작 - Schedule ID: {}, User ID: {}",
+                                schedule.getId(), user.getId());
+                        sendRoutineStartReminderWithWeather(schedule, user);
+                    } else {
+                        log.debug("🔄 [ScheduleNotificationService] 이미 1시간 전 알림 전송됨 - Schedule ID: {}, Notification ID: {}",
+                                schedule.getId(), existingNotification.get().getId());
+                    }
+                }
+            } catch (Exception e) {
+                log.error("❌ [ScheduleNotificationService] 루틴 시작 1시간 전 알림 처리 중 오류 발생 - Schedule ID: {}, 에러: {}",
+                        schedule.getId(), e.getMessage(), e);
             }
         }
 
@@ -411,7 +429,7 @@ public class ScheduleNotificationService {
     }
 
     // 루틴 아이템 전용 알림 전송 (scheduleId 포함)
-    private void sendRoutineItemNotification(User user, Schedule schedule, String title, String body,
+    private void    sendRoutineItemNotification(User user, Schedule schedule, String title, String body,
                                             Map<String, String> data, Long routineItemId) {
         Notification savedNotification = null;
 
@@ -491,6 +509,8 @@ public class ScheduleNotificationService {
      */
     public void sendDelayedRoutineItemNotification(Schedule schedule, User user, String routineItemName) {
         Notification savedNotification = null;
+        String notificationType = "delayed_routine_item";
+        Long relatedId = schedule.getId();
 
         try {
             String title = "늦은 일정 등록";
@@ -499,20 +519,32 @@ public class ScheduleNotificationService {
             Map<String, String> data = new HashMap<>();
             data.put("scheduleId", schedule.getId().toString());
             data.put("routineItemName", routineItemName);
-            data.put("type", "delayed_routine_item");
+            data.put("type", notificationType);
 
-            // DB에 먼저 저장
-            Notification notification = Notification.builder()
-                    .user(user)
-                    .title(title)
-                    .body(body)
-                    .relatedId(schedule.getId())
-                    .notificationType("delayed_routine_item")
-                    .build();
+            // DB에 먼저 저장 (동시성 제어)
+            synchronized (this) {
+                Optional<Notification> existingCheck = notificationRepository
+                        .findByUserAndRelatedIdAndNotificationType(user, relatedId, notificationType);
 
-            savedNotification = notificationRepository.save(notification);
-            log.info("💾 [ScheduleNotificationService] 지연 루틴 아이템 알림 DB 저장 완료 - 알림ID: {}, User: {}, Schedule: {}, Item: {}",
-                    savedNotification.getId(), user.getId(), schedule.getId(), routineItemName);
+                if (existingCheck.isPresent()) {
+                    log.info("💾 [ScheduleNotificationService] 중복 알림 방지 - 이미 존재하는 지연 루틴 아이템 알림 (사용자: {}, 스케줄: {}, 아이템: {})",
+                            user.getId(), relatedId, routineItemName);
+                    return;
+                }
+
+                // DB에 저장
+                Notification notification = Notification.builder()
+                        .user(user)
+                        .title(title)
+                        .body(body)
+                        .relatedId(relatedId)
+                        .notificationType(notificationType)
+                        .build();
+
+                savedNotification = notificationRepository.save(notification);
+                log.info("💾 [ScheduleNotificationService] 지연 루틴 아이템 알림 DB 저장 완료 - 알림ID: {}, User: {}, Schedule: {}, Item: {}",
+                        savedNotification.getId(), user.getId(), schedule.getId(), routineItemName);
+            }
 
             // DB 저장 후 FCM 또는 WebSocket으로 전송 (저장과 분리)
             try {
@@ -644,17 +676,23 @@ public class ScheduleNotificationService {
             }
 
             // 날씨 체크 (목적지 좌표가 있는 경우에만)
-            checkAndHandleWeather(schedule, user, bodyBuilder, data);
+            boolean severeWeatherDetected = checkAndHandleWeather(schedule, user, bodyBuilder, data);
 
             // 교통 지연 체크 (출발지와 도착지 좌표가 있는 경우에만)
-            checkAndHandleTrafficDelay(schedule, user, bodyBuilder, data);
+            boolean trafficDelayDetected = checkAndHandleTrafficDelay(schedule, user, bodyBuilder, data);
 
-            // 1시간 전 알림 전송 (날씨 및 교통 지연 정보 포함)
-            sendAndSaveNotification(user, title, bodyBuilder.toString(), data,
-                schedule.getId(), NOTIFICATION_TYPE_ROUTINE_START_REMINDER);
+            // 악천후나 교통 지연이 감지되지 않았을 경우에만 1시간 전 알림을 보냅니다.
+            if (!severeWeatherDetected && !trafficDelayDetected) {
+                // 1시간 전 알림 전송 (날씨 및 교통 지연 정보 포함)
+                sendAndSaveNotification(user, title, bodyBuilder.toString(), data,
+                        schedule.getId(), NOTIFICATION_TYPE_ROUTINE_START_REMINDER);
 
-            log.info("✅ [ScheduleNotificationService] 1시간 전 알림 전송 완료 - User ID: {}, Schedule ID: {}",
-                    user.getId(), schedule.getId());
+                log.info("✅ [ScheduleNotificationService] 1시간 전 알림 전송 완료 - User ID: {}, Schedule ID: {}",
+                        user.getId(), schedule.getId());
+            } else {
+                log.info("✅ [ScheduleNotificationService] 악천후 또는 교통 지연으로 인해 별도 알림이 전송되었으므로, 1시간 전 정규 알림은 생략합니다. - User ID: {}, Schedule ID: {}",
+                        user.getId(), schedule.getId());
+            }
 
         } catch (Exception e) {
             log.error("❌ [ScheduleNotificationService] 루틴 시작 1시간 전 알림 전송 실패 - User ID: {}, Schedule ID: {}, 에러: {}",
@@ -666,11 +704,11 @@ public class ScheduleNotificationService {
      * 날씨 체크 및 알림 처리
      * 악천후(비, 눈, 천둥 등) 감지 시 15분 앞당기고 우산 추가
      */
-    private void checkAndHandleWeather(Schedule schedule, User user, StringBuilder bodyBuilder, Map<String, String> data) {
+    private boolean checkAndHandleWeather(Schedule schedule, User user, StringBuilder bodyBuilder, Map<String, String> data) {
         // 목적지 좌표가 없으면 체크하지 않음
         if (schedule.getDestinationX() == null || schedule.getDestinationY() == null) {
             log.info("📍 [ScheduleNotificationService] 목적지 좌표 없음 - 날씨 체크 생략 - Schedule ID: {}", schedule.getId());
-            return;
+            return false;
         }
 
         try {
@@ -684,7 +722,7 @@ public class ScheduleNotificationService {
 
             if (weatherResponse == null) {
                 log.warn("⚠️ [ScheduleNotificationService] 날씨 정보 조회 실패 - Schedule ID: {}", schedule.getId());
-                return;
+                return false;
             }
 
             // 악천후 여부 확인 (비, 눈, 천둥, 폭풍 - 이슬비 제외)
@@ -736,15 +774,18 @@ public class ScheduleNotificationService {
                 data.put("weatherDescription", weatherDesc);
                 data.put("originalStartTime", originalStartTime.toString());
                 data.put("newStartTime", newStartTime.toString());
+                return true;
             } else {
                 log.info("✅ [ScheduleNotificationService] 날씨 양호 - Schedule ID: {}", schedule.getId());
                 data.put("hasSevereWeather", "false");
+                return false;
             }
 
         } catch (Exception e) {
             log.error("❌ [ScheduleNotificationService] 날씨 체크 실패 - Schedule ID: {}, 에러: {}",
                     schedule.getId(), e.getMessage(), e);
             data.put("hasSevereWeather", "false");
+            return false;
         }
     }
 
@@ -779,12 +820,12 @@ public class ScheduleNotificationService {
      * 교통 지연 체크 및 알림 처리
      * 원본 교통 시간과 현재 교통 시간을 비교하여 15분 이상 차이나면 알림 전송
      */
-    private void checkAndHandleTrafficDelay(Schedule schedule, User user, StringBuilder bodyBuilder, Map<String, String> data) {
+    private boolean checkAndHandleTrafficDelay(Schedule schedule, User user, StringBuilder bodyBuilder, Map<String, String> data) {
         // 좌표 정보가 없으면 체크하지 않음
         if (schedule.getStartX() == null || schedule.getStartY() == null ||
             schedule.getDestinationX() == null || schedule.getDestinationY() == null) {
             log.info("📍 [ScheduleNotificationService] 좌표 정보 없음 - 교통 지연 체크 생략 - Schedule ID: {}", schedule.getId());
-            return;
+            return false;
         }
 
         try {
@@ -867,15 +908,18 @@ public class ScheduleNotificationService {
                 data.put("delayMinutes", String.valueOf(maxDelay));
                 data.put("originalStartTime", originalStartTime.toString());
                 data.put("newStartTime", newStartTime.toString());
+                return true;
             } else {
                 log.info("✅ [ScheduleNotificationService] 교통 지연 없음 - Schedule ID: {}", schedule.getId());
                 data.put("hasTrafficDelay", "false");
+                return false;
             }
 
         } catch (Exception e) {
             log.error("❌ [ScheduleNotificationService] 교통 지연 체크 실패 - Schedule ID: {}, 에러: {}",
                     schedule.getId(), e.getMessage(), e);
             data.put("hasTrafficDelay", "false");
+            return false;
         }
     }
 
@@ -921,4 +965,3 @@ public class ScheduleNotificationService {
         return request;
     }
 }
-//TODO : 비대면일시, 교통과 날씨 체크 안하도록(현재는 테스트용{좌표 넣기 귀찮아서}으로 비대면도 가능하게 함)
