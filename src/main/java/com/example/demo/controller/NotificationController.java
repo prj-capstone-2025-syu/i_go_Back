@@ -7,6 +7,7 @@ import com.example.demo.entity.user.User;
 import com.example.demo.repository.NotificationRepository;
 import com.example.demo.repository.UserRepository;
 import com.example.demo.service.NotificationService;
+import com.google.firebase.messaging.FirebaseMessagingException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -15,6 +16,7 @@ import com.example.demo.service.FCMService;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ExecutionException;
 
 @RestController
 @RequestMapping("/api/notifications")
@@ -60,7 +62,7 @@ public class NotificationController {
     @PostMapping("/send")
     public ResponseEntity<String> sendNotification(@RequestParam String token,
                                                    @RequestParam String title,
-                                                   @RequestParam String body) {
+                                                   @RequestParam String body) throws ExecutionException, FirebaseMessagingException, InterruptedException {
         Map<String, String> data = new HashMap<>();
         data.put("key1", "value1");
         data.put("key2", "value2");
