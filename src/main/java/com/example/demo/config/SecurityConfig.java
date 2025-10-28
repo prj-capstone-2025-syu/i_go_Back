@@ -75,6 +75,7 @@ public class SecurityConfig {
                                 "/api/auth/refresh-token", // Refresh Token 엔드포인트
                                 "/error",     // 에러 페이지
                                 "/ws/**",     // WebSocket 엔드포인트
+                                "/api/debug/**",
                                 // 프론트엔드 정적 리소스 및 Next.js 내부 경로 (필요에 따라 추가)
                                 "/favicon.ico",
                                 "/logo.png", // greeting 페이지에서 사용될 수 있는 이미지
