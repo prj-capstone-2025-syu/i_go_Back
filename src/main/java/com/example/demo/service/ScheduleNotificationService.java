@@ -265,10 +265,10 @@ public class ScheduleNotificationService {
                 continue;
             }
 
-            // ⭐ 첫 번째 아이템의 시작 시간 = 루틴 시작 시간
+            // 첫 번째 아이템의 시작 시간 = 루틴 시작 시간
             LocalDateTime routineStartTime = calculatedItems.get(0).getStartTime();
 
-            // ⭐ 준비물 알림 시간 = 루틴 시작 - N분
+            // 준비물 알림 시간 = 루틴 시작 - N분
             LocalDateTime suppliesNotificationTime = routineStartTime.minusMinutes(suppliesNotificationMinutesBefore);
 
             log.info("📦 [준비물 알림 시간 계산] 스케줄 ID: {}", schedule.getId());
@@ -281,26 +281,33 @@ public class ScheduleNotificationService {
 
             // 알림 시간 도달 확인
             if (suppliesNotificationTime.isEqual(now)) {
+                // ⭐ 알림 중복 체크 추가
+                Optional<Notification> existingNotification = notificationRepository
+                        .findByUserAndRelatedIdAndNotificationType(user, schedule.getId(), NOTIFICATION_TYPE_SUPPLIES_REMINDER);
 
-                log.info("📦 준비물 알림 전송 - 사용자: {}, 스케줄 ID: {}, 루틴 시작 {}분 전",
-                        user.getEmail(), schedule.getId(), suppliesNotificationMinutesBefore);
+                if (existingNotification.isEmpty()) {
+                    log.info("📦 준비물 알림 전송 - 사용자: {}, 스케줄 ID: {}, 루틴 시작 {}분 전",
+                            user.getEmail(), schedule.getId(), suppliesNotificationMinutesBefore);
 
-                String title = "준비물 알림";
-                String body = String.format("🎒 %s 준비물 체크하세요!\n일정 시작까지 %d분 남았습니다.",
-                        schedule.getSupplies(),
-                        suppliesNotificationMinutesBefore);
+                    String title = "준비물 알림";
+                    String body = String.format("🎒 %s 준비물 체크하세요!\n일정 시작까지 %d분 남았습니다.",
+                            schedule.getSupplies(),
+                            suppliesNotificationMinutesBefore);
 
-                Map<String, String> data = new HashMap<>();
-                data.put("type", NOTIFICATION_TYPE_SUPPLIES_REMINDER);
-                data.put("scheduleId", String.valueOf(schedule.getId()));
-                data.put("routineId", String.valueOf(schedule.getRoutineId()));
-                data.put("supplies", schedule.getSupplies());
-                data.put("routineStartTime", routineStartTime.toString());
-                data.put("reminderMinutes", String.valueOf(suppliesNotificationMinutesBefore));
+                    Map<String, String> data = new HashMap<>();
+                    data.put("type", NOTIFICATION_TYPE_SUPPLIES_REMINDER);
+                    data.put("scheduleId", String.valueOf(schedule.getId()));
+                    data.put("routineId", String.valueOf(schedule.getRoutineId()));
+                    data.put("supplies", schedule.getSupplies());
+                    data.put("routineStartTime", routineStartTime.toString());
+                    data.put("reminderMinutes", String.valueOf(suppliesNotificationMinutesBefore));
 
-                sendAndSaveNotification(user, title, body, data, schedule.getId(), NOTIFICATION_TYPE_SUPPLIES_REMINDER);
+                    sendAndSaveNotification(user, title, body, data, schedule.getId(), NOTIFICATION_TYPE_SUPPLIES_REMINDER);
 
-                log.info("✅ 준비물 알림 전송 완료 - 스케줄 ID: {}", schedule.getId());
+                    log.info("✅ 준비물 알림 전송 완료 - 스케줄 ID: {}", schedule.getId());
+                } else {
+                    log.info("📦 준비물 알림 중복 감지 (이미 전송됨) - 스케줄 ID: {}", schedule.getId());
+                }
             } else {
                 log.debug("⏰ 준비물 알림 시간 아님 - 스케줄 ID: {}, 알림 시간: {}, 현재: {}",
                         schedule.getId(), suppliesNotificationTime, now);
@@ -312,6 +319,7 @@ public class ScheduleNotificationService {
         }
     }
 }
+
 
     // 스케줄 시작 알림 처리
     private void processScheduleStartNotification(Schedule schedule, User user, LocalDateTime now) {
