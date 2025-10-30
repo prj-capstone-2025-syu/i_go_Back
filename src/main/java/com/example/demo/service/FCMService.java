@@ -10,6 +10,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -95,115 +96,142 @@ public class FCMService {
     }
 
     /**
-     * 사용자에게 알림 전송 (FCM 우선, 실패 시 WebSocket)
+     * 사용자에게 알림 전송 (웹/앱 둘 다 시도)
+     *
+     * @param userId 알림 받을 사용자 ID (이걸로 유저 찾을 거야♡)
+     * @param title  알림 제목
+     * @param body   알림 내용
+     * @param data   알림 데이터
      */
-    public void sendNotificationToUser(String userId, String fcmToken, String title, String body, Map<String, String> data) {
-        boolean fcmSent = false;
+    public void sendNotificationToUser(String userId, String title, String body, Map<String, String> data) {
+        // 멍청하게 토큰을 파라미터로 받지 말고, userId로 유저를 찾아!♡
+        long id = Long.parseLong(userId); // 오빠 userId가 String이라며?♡
+        User user = userRepository.findById(id).orElse(null);
 
-        // FCM 토큰이 있으면 FCM으로 전송 시도
-        if (fcmToken != null && !fcmToken.isEmpty()) {
-            try {
-                sendMessageToToken(fcmToken, title, body, data);
-                fcmSent = true;
-                log.info("✅ [FCMService] FCM 알림 전송 성공: userId={}, title={}", userId, title);
-
-            } catch (ExecutionException e) {
-                log.warn("⚠️ [FCMService] FCM 알림 전송 ExecutionException: userId={}, title={}, 오류: {}",
-                        userId, title, e.getMessage());
-
-                if (e.getCause() instanceof FirebaseMessagingException fme) {
-                    MessagingErrorCode errorCode = fme.getMessagingErrorCode();
-                    log.warn("FirebaseMessagingException ErrorCode: {}", errorCode);
-
-                    if (errorCode == MessagingErrorCode.UNREGISTERED ||
-                        errorCode == MessagingErrorCode.INVALID_ARGUMENT) {
-                        log.warn("!!! FCM 토큰 무효화 감지 ({}), DB에서 삭제합니다.", errorCode);
-                        deleteInvalidFcmToken(fcmToken);
-                    }
-                }
-
-            } catch (InterruptedException e) {
-                log.warn("⚠️ [FCMService] FCM 알림 전송 InterruptedException: userId={}, title={}", userId, title);
-                Thread.currentThread().interrupt();
-
-            } catch (FirebaseMessagingException e) {
-                MessagingErrorCode errorCode = e.getMessagingErrorCode();
-                log.warn("⚠️ [FCMService] FCM 알림 전송 FirebaseMessagingException: userId={}, title={}, ErrorCode={}",
-                        userId, title, errorCode);
-
-                if (errorCode == MessagingErrorCode.UNREGISTERED ||
-                    errorCode == MessagingErrorCode.INVALID_ARGUMENT) {
-                    log.warn("!!! FCM 토큰 무효화 감지 ({}), DB에서 삭제합니다.", errorCode);
-                    deleteInvalidFcmToken(fcmToken);
-                }
-
-            } catch (Exception e) {
-                log.warn("⚠️ [FCMService] FCM 알림 전송 중 예상치 못한 오류: userId={}, title={}, 오류: {}",
-                        userId, title, e.getMessage());
-            }
-        } else {
-            log.info("📭 [FCMService] FCM 토큰 없음, WebSocket으로 전송 시도: userId={}", userId);
+        if (user == null) {
+            log.warn("⚠️ [FCMService] 알림을 보낼 사용자를 찾을 수 없음: userId={}", userId);
+            return;
         }
 
-        // ⭐⭐⭐ FCM 전송 실패했거나 토큰이 없으면 항상 WebSocket 전송 시도
+        String webFcmToken = user.getFcmToken(); // 이게 '웹' 토큰♡
+        String appFcmToken = user.getAppFcmToken(); // 이게 '앱' 토큰♡
+
+        boolean fcmSent = false; // 웹이든 앱이든 하나라도 성공하면 true♡
+        boolean webTokenInvalid = false;
+        boolean appTokenInvalid = false;
+
+        // 1. '웹' 토큰으로 전송 시도♡
+        if (webFcmToken != null && !webFcmToken.isEmpty()) {
+            try {
+                sendMessageToToken(webFcmToken, title, body, data);
+                fcmSent = true;
+                log.info("✅ [FCMService] '웹' FCM 알림 전송 성공: userId={}, title={}", userId, title);
+            } catch (Exception e) {
+                log.warn("⚠️ [FCMService] '웹' FCM 알림 전송 실패: userId={}, title={}", userId, title);
+                // 토큰이 무효한지 검사♡
+                if (isTokenInvalidException(e)) {
+                    webTokenInvalid = true;
+                }
+            }
+        }
+
+        // 2. '앱' 토큰으로 전송 시도♡
+        if (appFcmToken != null && !appFcmToken.isEmpty()) {
+            try {
+                sendMessageToToken(appFcmToken, title, body, data);
+                fcmSent = true;
+                log.info("✅ [FCMService] '앱' FCM 알림 전송 성공: userId={}, title={}", userId, title);
+            } catch (Exception e) {
+                log.warn("⚠️ [FCMService] '앱' FCM 알림 전송 실패: userId={}, title={}", userId, title);
+                // 토큰이 무효한지 검사♡
+                if (isTokenInvalidException(e)) {
+                    appTokenInvalid = true;
+                }
+            }
+        }
+
+        // 3. 무효화된 토큰 DB에서 삭제 (따로 처리해줘야 오빠가 좋아하는 트랜잭션이 안 꼬여♡)
+        if (webTokenInvalid) {
+            deleteInvalidFcmToken(webFcmToken, "WEB");
+        }
+        if (appTokenInvalid) {
+            deleteInvalidFcmToken(appFcmToken, "APP");
+        }
+
+        // 4. 웹이든 앱이든 FCM 전송을 *한 번도* 성공 못했으면 WebSocket으로 쏴♡
         if (!fcmSent) {
             log.info("📡 [FCMService] FCM 실패/없음, WebSocket 전송 시도: userId={}", userId);
-
             try {
-                // WebSocket 데이터 준비
                 Map<String, String> wsData = new HashMap<>(data);
                 wsData.put("title", title);
                 wsData.put("body", body);
-
-                String type = data.get("type");
-                log.debug("📨 [FCMService → WebSocket] 메시지 전송 시작: userId={}, type={}", userId, type);
-
-                // ⭐ NotificationWebSocketHandler를 통해 전송
                 webSocketHandler.sendNotificationToUser(userId, wsData);
-
                 log.info("✅ [FCMService] WebSocket 알림 전송 성공: userId={}, title={}", userId, title);
-
             } catch (Exception e) {
-                // WebSocket 전송 실패 (사용자 오프라인 가능)
-                log.debug("⚠️ [FCMService] WebSocket 전송 실패 (사용자 오프라인 가능성): userId={}, 오류: {}",
+                log.debug("⚠️ [FCMService] WebSocket 전송 실패 (오프라인 추정): userId={}, 오류: {}",
                         userId, e.getMessage());
             }
+        } else {
+            log.info("📭 [FCMService] FCM 전송 성공, WebSocket은 생략: userId={}", userId);
         }
     }
 
     /**
-     * 유효하지 않은 FCM 토큰을 DB에서 삭제
+     * 예외가 '토큰 무효' 관련인지 확인하는 헬퍼 메서드♡
+     */
+    private boolean isTokenInvalidException(Exception e) {
+        if (e.getCause() instanceof FirebaseMessagingException fme) {
+            MessagingErrorCode errorCode = fme.getMessagingErrorCode();
+            return errorCode == MessagingErrorCode.UNREGISTERED ||
+                   errorCode == MessagingErrorCode.INVALID_ARGUMENT;
+        }
+        if (e instanceof FirebaseMessagingException fme) {
+            MessagingErrorCode errorCode = fme.getMessagingErrorCode();
+            return errorCode == MessagingErrorCode.UNREGISTERED ||
+                   errorCode == MessagingErrorCode.INVALID_ARGUMENT;
+        }
+        return false;
+    }
+
+    /**
+     * [대규모 수정] 유효하지 않은 FCM 토큰을 DB에서 삭제 (웹/앱 구분)
      */
     @Transactional
-    public void deleteInvalidFcmToken(String invalidToken) {
+    public void deleteInvalidFcmToken(String invalidToken, String tokenType) {
         if (invalidToken == null || invalidToken.isEmpty()) {
-            log.warn("삭제할 FCM 토큰 값이 비어있습니다.");
+            log.warn("삭제할 FCM 토큰 값이 비어있습니다. (Type: {})", tokenType);
             return;
         }
 
+        log.warn("!!! FCM 토큰 무효화 감지 (Type: {}), DB에서 삭제합니다. Token: {}...",
+                tokenType, invalidToken.substring(0, Math.min(invalidToken.length(), 10)));
+
         try {
-            List<User> usersWithToken = userRepository.findAllByFcmToken(invalidToken);
+            List<User> usersWithToken;
+            // 토큰 타입에 따라 다른 필드를 검색해야지, 멍청아♡
+            if ("APP".equals(tokenType)) {
+                usersWithToken = userRepository.findAllByAppFcmToken(invalidToken);
+            } else {
+                // 기본은 '웹' 토큰(fcmToken) 검색
+                usersWithToken = userRepository.findAllByFcmToken(invalidToken);
+            }
 
             if (usersWithToken.isEmpty()) {
                 log.warn("유효하지 않은 토큰 ({})에 해당하는 사용자를 DB에서 찾지 못했습니다.",
                         invalidToken.substring(0, Math.min(invalidToken.length(), 10)) + "...");
             } else {
-                log.info("유효하지 않은 토큰 ({}) 삭제 대상 사용자 {}명 찾음",
-                        invalidToken.substring(0, Math.min(invalidToken.length(), 10)) + "...",
-                        usersWithToken.size());
-
                 for (User user : usersWithToken) {
-                    if (invalidToken.equals(user.getFcmToken())) {
-                        log.info(" -> 사용자 ID {}의 FCM 토큰을 null로 업데이트합니다.", user.getId());
+                    if ("APP".equals(tokenType) && invalidToken.equals(user.getAppFcmToken())) {
+                        log.info(" -> 사용자 ID {}의 '앱' 토큰을 null로 업데이트합니다.", user.getId());
+                        user.setAppFcmToken(null);
+                        userRepository.save(user);
+                    } else if ("WEB".equals(tokenType) && invalidToken.equals(user.getFcmToken())) {
+                        log.info(" -> 사용자 ID {}의 '웹' 토큰을 null로 업데이트합니다.", user.getId());
                         user.setFcmToken(null);
                         userRepository.save(user);
-                    } else {
-                        log.info(" -> 사용자 ID {}의 토큰이 이미 변경되어 삭제를 건너뜁니다.", user.getId());
                     }
                 }
-
-                log.info("유효하지 않은 토큰({})을 가진 사용자들의 토큰 삭제 처리 완료.",
-                        invalidToken.substring(0, Math.min(invalidToken.length(), 10)) + "...");
+                log.info("유효하지 않은 토큰(Type: {}) 삭제 처리 완료.", tokenType);
             }
         } catch (Exception e) {
             log.error("DB에서 유효하지 않은 FCM 토큰 삭제 중 오류 발생: {}", e.getMessage(), e);

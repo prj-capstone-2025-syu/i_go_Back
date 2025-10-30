@@ -3,8 +3,6 @@ package com.example.demo.service;
 import com.example.demo.dto.routine.CalculatedRoutineItemTime;
 import com.example.demo.dto.weather.WeatherResponse;
 import com.example.demo.entity.fcm.Notification;
-import com.example.demo.entity.routine.Routine;
-import com.example.demo.entity.routine.RoutineItem;
 import com.example.demo.entity.schedule.Schedule;
 import com.example.demo.entity.user.User;
 import com.example.demo.repository.NotificationRepository;
@@ -16,7 +14,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
-import reactor.core.publisher.Mono;
 
 import java.time.LocalDateTime;
 import java.util.HashMap;
@@ -41,7 +38,6 @@ public class ScheduleNotificationService {
     private final TransportService transportService;
     private final OdysseyTransitService odysseyTransitService;
     private final UserRepository userRepository;
-    private final RoutineRepository routineRepository;
 
     @Value("${igo.notification.supplies.minutes.before:5}")
     private int suppliesNotificationMinutesBefore;
@@ -490,14 +486,10 @@ public class ScheduleNotificationService {
                 log.info("💾 {} 알림 DB 저장 완료 - ID: {}, User: {}, RelatedID: {}", notificationType, savedNotification.getId(), userId, relatedId);
             } // synchronized 종료
 
-            User latestUser = userRepository.findById(userId)
-                    .orElseThrow(() -> new RuntimeException("알림 전송 시 사용자를 찾을 수 없음: ID " + userId));
-            String latestFcmToken = latestUser.getFcmToken(); // 최신 토큰 가져오기
 
             // DB 저장 후 FCM 또는 WebSocket으로 전송
             try {
-                // *** 최신 토큰(latestFcmToken)을 사용하여 전송 ***
-                fcmService.sendNotificationToUser(latestUser.getEmail(), latestFcmToken, title, body, data);
+                fcmService.sendNotificationToUser(String.valueOf(userId), title, body, data);
                 log.info("📤 {} 알림 전송 시도 완료 - User: {}, RelatedID: {}", notificationType, userId, relatedId);
             } catch (Exception e) {
                 // sendNotificationToUser 내부에서 예외를 처리하고 로깅하므로, 여기서는 추가 로깅만
@@ -542,15 +534,10 @@ public class ScheduleNotificationService {
                 log.info("💾 루틴 아이템 알림 DB 저장 완료 - ID: {}, Schedule: {}, Item: {}", savedNotification.getId(), scheduleId, routineItemId);
             } // synchronized 종료
 
-            // *** [수정] FCM 전송 직전에 최신 User 정보 조회 ***
-            User latestUser = userRepository.findById(userId)
-                    .orElseThrow(() -> new RuntimeException("루틴 알림 전송 시 사용자를 찾을 수 없음: ID " + userId));
-            String latestFcmToken = latestUser.getFcmToken(); // 최신 토큰 가져오기
-
             // DB 저장 후 FCM 또는 WebSocket으로 전송
             try {
                 // *** 최신 토큰(latestFcmToken)을 사용하여 전송 ***
-                fcmService.sendNotificationToUser(latestUser.getEmail(), latestFcmToken, title, body, data);
+                fcmService.sendNotificationToUser(String.valueOf(userId), title, body, data);
                 log.info("📤 루틴 아이템 알림 전송 시도 완료 - User: {}, Schedule: {}, Item: {}", userId, scheduleId, routineItemId);
             } catch (Exception e) {
                 log.error("❌ 루틴 아이템 알림 전송 중 오류 발생 (sendNotificationToUser 호출 후) - User: {}, Schedule: {}, Item: {}",
@@ -628,15 +615,11 @@ public class ScheduleNotificationService {
                 log.info("💾 지연 루틴 알림 DB 저장 완료 - ID: {}, User: {}, Schedule: {}", savedNotification.getId(), userId, relatedId);
             } // synchronized 종료
 
-            // *** [수정] FCM 전송 직전에 최신 User 정보 조회 ***
-            User latestUser = userRepository.findById(userId)
-                    .orElseThrow(() -> new RuntimeException("지연 루틴 알림 전송 시 사용자를 찾을 수 없음: ID " + userId));
-            String latestFcmToken = latestUser.getFcmToken(); // 최신 토큰 가져오기
 
             // DB 저장 후 FCM 또는 WebSocket으로 전송
             try {
                 // *** 최신 토큰(latestFcmToken)을 사용하여 전송 ***
-                fcmService.sendNotificationToUser(latestUser.getEmail(), latestFcmToken, title, body, data);
+                fcmService.sendNotificationToUser(String.valueOf(userId), title, body, data);
                 log.info("📤 지연 루틴 알림 전송 시도 완료 - User: {}, Schedule: {}", userId, relatedId);
             } catch (Exception e) {
                 log.error("❌ 지연 루틴 알림 전송 중 오류 발생 (sendNotificationToUser 호출 후) - User: {}, Schedule: {}, 오류: {}",
@@ -716,6 +699,9 @@ public class ScheduleNotificationService {
      * 비대면 일정 판별 (category가 REMOTE, ONLINE 등)
      */
     private boolean isRemoteSchedule(Schedule schedule) {
+        if (schedule.getLocation() != null && schedule.getLocation().contains("비대면")) {
+            return true;
+        }
         if (schedule.getCategory() == null) return false;
         String category = schedule.getCategory().name().toLowerCase();
         return category.contains("remote") ||
@@ -758,7 +744,7 @@ public class ScheduleNotificationService {
                 log.info("🏠 [ScheduleNotificationService] 비대면 일정 감지 - Schedule ID: {}, Category: {}",
                         schedule.getId(), schedule.getCategory());
 
-                bodyBuilder.append("\n\n💻 온라인 일정이므로 편안한 곳에서 참여하세요!");
+                bodyBuilder.append("\n💻 온라인 일정이므로 편안한 곳에서 참여하세요!");
                 data.put("hasWeather", "false");
                 data.put("isRemote", "true");
 

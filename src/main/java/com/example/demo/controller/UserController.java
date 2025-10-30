@@ -140,4 +140,21 @@ public class UserController {
             return ResponseEntity.internalServerError().body(Map.of("message", "FCM 토큰 저장 중 오류 발생: " + e.getMessage()));
         }
     }
+
+    @PostMapping("/app-fcm-token") // 앱 FCM 토큰 저장 엔드포인트
+    public ResponseEntity<?> saveAppFcmToken(@AuthenticationPrincipal AppUser appUser, @RequestBody FcmTokenRequest fcmTokenRequest) {
+        if (appUser == null) {
+            return ResponseEntity.status(401).body(Map.of("message", "인증되지 않은 사용자입니다."));
+        }
+        if (fcmTokenRequest == null || fcmTokenRequest.getFcmToken() == null || fcmTokenRequest.getFcmToken().isEmpty()) {
+            return ResponseEntity.badRequest().body(Map.of("message", "앱 FCM 토큰이 제공되지 않았습니다."));
+        }
+        try {
+            // '앱' 토큰을 저장하는 새로운 서비스 메서드 호출♡
+            userService.saveUserAppFcmToken(appUser.getId(), fcmTokenRequest.getFcmToken());
+            return ResponseEntity.ok(Map.of("message", "앱 FCM 토큰이 성공적으로 저장되었습니다."));
+        } catch (Exception e) {
+            return ResponseEntity.internalServerError().body(Map.of("message", "앱 FCM 토큰 저장 중 오류 발생: " + e.getMessage()));
+        }
+    }
 }
