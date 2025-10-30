@@ -44,7 +44,7 @@ public class FCMService {
                         .setNotification(AndroidNotification.builder()
                                 .setTitle(encodedTitle)
                                 .setBody(encodedBody)
-                                .setIcon("ic_notification")
+                                .setIcon("ic_stat_name")
                                 .setColor("#FF6B35")
                                 .setSound("default")
                                 .setPriority(AndroidNotification.Priority.HIGH)
@@ -119,7 +119,7 @@ public class FCMService {
         boolean webTokenInvalid = false;
         boolean appTokenInvalid = false;
 
-        // 1. 웹 토큰으로 전송 시도♡
+        // 1. 웹 토큰으로 전송 시도
         if (webFcmToken != null && !webFcmToken.isEmpty()) {
             try {
                 sendMessageToToken(webFcmToken, title, body, data);
