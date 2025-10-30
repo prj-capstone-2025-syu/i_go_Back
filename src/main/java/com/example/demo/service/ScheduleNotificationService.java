@@ -398,7 +398,7 @@ public class ScheduleNotificationService {
                         user, schedule.getId(), itemTime.getRoutineItemId(), NOTIFICATION_TYPE_ROUTINE_ITEM_START);
 
         if (existingNotification.isEmpty()) {
-            String title = itemTime.getRoutineItemName();
+            String title = itemTime.getRoutineItemName() + " 시작!";
             String body = String.format("'%s' 일정의 [%s] 할 시간입니다!", schedule.getTitle(), itemTime.getRoutineItemName());
 
             Map<String, String> data = createRoutineItemNotificationData(schedule, itemTime);
