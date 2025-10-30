@@ -45,6 +45,7 @@ public class FCMService {
                                 .setTitle(encodedTitle)
                                 .setBody(encodedBody)
                                 .setIcon("ic_stat_name")
+                                .setColor("#0078D4")
                                 .setSound("default")
                                 .setPriority(AndroidNotification.Priority.HIGH)
                                 .build())
