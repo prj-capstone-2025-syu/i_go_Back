@@ -60,6 +60,9 @@ public class User implements AppUser {
     @Column
     private String fcmToken;
 
+    @Column (length = 512)
+    private String appFcmToken;
+
     // 알림 설정 필드
     @Column(nullable = false, columnDefinition = "BOOLEAN DEFAULT true")
     @Builder.Default

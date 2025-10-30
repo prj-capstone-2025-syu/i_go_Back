@@ -24,4 +24,7 @@ public interface UserRepository extends JpaRepository<User, Long> {
      * @return 해당 토큰을 가진 모든 User 리스트
      */
     List<User> findAllByFcmToken(String fcmToken); // <<< 여러 결과를 받을 메소드 추가
+
+    List<User> findAllByAppFcmToken(String appFcmToken);
+
 }

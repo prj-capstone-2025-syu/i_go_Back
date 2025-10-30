@@ -161,8 +161,16 @@ public class UserService {
     // FCM 토큰 저장 메서드
     public void saveUserFcmToken(Long userId, String fcmToken) {
         User user = userRepository.findById(userId)
-                .orElseThrow(() -> new EntityNotFoundException("User not found with id: " + userId));
+                .orElseThrow(() -> new EntityNotFoundException("사용자를 찾을 수 없습니다. ID: " + userId));
         user.setFcmToken(fcmToken);
         userRepository.save(user);
     }
+    
+    public void saveUserAppFcmToken(Long userId, String appFcmToken) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new EntityNotFoundException("사용자를 찾을 수 없습니다. ID: " + userId));
+        user.setAppFcmToken(appFcmToken); // '앱' 토큰 저장
+        userRepository.save(user);
+    }
+
 }
