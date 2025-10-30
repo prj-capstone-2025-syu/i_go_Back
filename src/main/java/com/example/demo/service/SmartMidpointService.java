@@ -116,12 +116,16 @@ public class SmartMidpointService {
 
     // 위치 입력 처리 및 충분하면 바로 추천 시작
     private Mono<MidpointResponse> handleLocationInputAndRecommend(Long userId, String userMessage, MidpointSession session) {
-        List<String> rawLocations = extractLocationsFromMessage(userMessage);
-        if (rawLocations.isEmpty()) {
+        //파싱
+        ParseResult parseResult = parseLocationsFromMessage(userMessage);
+        List<String> rawLocations = parseResult.stations; // '역'이 포함된 것으로 판단된 항목들
+        List<String> missingSuffixes = parseResult.missingSuffixes; // '역'이 없는 항목들 (재입력 요구)
+
+        if (rawLocations.isEmpty() && missingSuffixes.isEmpty()) {
             return Mono.just(MidpointResponse.builder().success(false).message("위치를 입력해주세요. (예: 강남역)").build());
         }
 
-        // 비동기 위치 검증 (GeocodingService 사용)
+        // rawLocations에 대해 지오코딩 검증
         return Flux.fromIterable(rawLocations)
                 .flatMap(location -> Mono.fromCallable(() -> { // GeocodingService.getCoordinates가 동기이므로 Callable로 감싸기
                             try {
@@ -150,6 +154,9 @@ public class SmartMidpointService {
                     int needed = session.getTotalPersons();
 
                     StringBuilder responseMessage = new StringBuilder();
+                    if (!missingSuffixes.isEmpty()) {
+                        responseMessage.append(String.format("❗ 다음 입력에는 '역'을 포함해주세요: %s\n\n", String.join(", ", missingSuffixes)));
+                    }
                     if (!invalidLocations.isEmpty()) responseMessage.append(String.format("❌ '%s' 위치는 찾을 수 없었어요. 더 자세한 주소나 장소명으로 다시 시도해주세요.\n\n", String.join(", ", invalidLocations)));
 
                     // 충분한 위치가 수집되었는지 확인
@@ -174,6 +181,81 @@ public class SmartMidpointService {
                         return Mono.just(MidpointResponse.builder().success(true).message(responseMessage.toString()).build());
                     }
                 });
+    }
+
+    // 위치 파싱 결과를 담는 내부 유틸 클래스
+    private static class ParseResult {
+        List<String> stations = new ArrayList<>();
+        List<String> missingSuffixes = new ArrayList<>();
+    }
+
+    /**
+     * 사용자 메시지에서 역명을 추출합니다.
+     * - '강남역', '강남 역' 등의 입력을 합쳐서 하나의 역명으로 인식합니다.
+     * - 쉼표(,), 세미콜론(;) 또는 줄바꿈으로 구분된 경우 여러 역을 추출합니다.
+     * - 개별 토큰 중에서 '역'이 붙어있지 않은 항목들은 missingSuffixes에 담아 재입력 요청에 사용합니다.
+     */
+    private ParseResult parseLocationsFromMessage(String message) {
+        ParseResult result = new ParseResult();
+        if (message == null) return result;
+
+        // 토큰화: 쉼표/세미콜론/줄바꿈으로 먼저 분리
+        String[] segments = message.split("[,;，；\\n\\r]+");
+
+        for (String seg : segments) {
+            if (seg == null) continue;
+            seg = seg.trim();
+            if (seg.isEmpty()) continue;
+
+            // 내부적으로 공백으로 나뉘어 있을 수 있는 "강남 역" 같은 경우를 처리하기 위해 내부 토큰 분해
+            String[] parts = seg.split("\\s+");
+            for (int i = 0; i < parts.length; i++) {
+                String token = parts[i].trim();
+                if (token.isEmpty()) continue;
+
+                // 만약 토큰 자체가 '역'이면 앞 토큰과 합친다
+                if (token.equals("역") && i > 0) {
+                    String prev = parts[i - 1].trim();
+                    if (!prev.isEmpty()) {
+                        String combined = prev + "역";
+                        if (!result.stations.contains(combined)) {
+                            result.stations.add(combined);
+                        }
+                        parts[i - 1] = "";
+                    }
+                    continue;
+                }
+
+                // 토큰이 이미 '역'으로 끝나는 경우 (예: '강남역')
+                if (token.endsWith("역")) {
+                    String cleaned = token.replaceAll("[\\p{Punct}]+$", "").trim();
+                    if (!cleaned.isEmpty() && !result.stations.contains(cleaned)) result.stations.add(cleaned);
+                    continue;
+                }
+
+                // 토큰이 단독으로 '역'이 붙어있지 않고 다음 토큰이 '역'일 경우 합친다
+                if (i + 1 < parts.length && parts[i + 1].trim().equals("역")) {
+                    String combined = token + "역";
+                    if (!result.stations.contains(combined)) result.stations.add(combined);
+                    i++;
+                    continue;
+                }
+
+                // 토큰이 '역' 접미사 없이 단독으로 존재하면 missingSuffixes에 추가
+                if (token.length() > 1) {
+                    if (token.matches("^[\\p{L}0-9가-힣]+$")) {
+                        result.missingSuffixes.add(token);
+                    }
+                }
+            }
+        }
+
+        // 추가 보정: stations에 들어간 항목 중에 여전히 공백 포함(예: '서울 강남역')되면 정리
+        result.stations = result.stations.stream().map(s -> s.replaceAll("\\s+", " ").trim()).filter(s -> s.length() > 1).collect(Collectors.toList());
+        // missingSuffixes 중 stations에 포함된 항목은 제거
+        result.missingSuffixes = result.missingSuffixes.stream().filter(s -> result.stations.stream().noneMatch(st -> st.contains(s))).distinct().collect(Collectors.toList());
+
+        return result;
     }
 
     // [핵심 로직] Google Places + ODsay 하이브리드 방식
