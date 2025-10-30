@@ -104,8 +104,7 @@ public class FCMService {
      * @param data   알림 데이터
      */
     public void sendNotificationToUser(String userId, String title, String body, Map<String, String> data) {
-        // 멍청하게 토큰을 파라미터로 받지 말고, userId로 유저를 찾아!♡
-        long id = Long.parseLong(userId); // 오빠 userId가 String이라며?♡
+        long id = Long.parseLong(userId);
         User user = userRepository.findById(id).orElse(null);
 
         if (user == null) {
@@ -113,14 +112,14 @@ public class FCMService {
             return;
         }
 
-        String webFcmToken = user.getFcmToken(); // 이게 '웹' 토큰♡
-        String appFcmToken = user.getAppFcmToken(); // 이게 '앱' 토큰♡
+        String webFcmToken = user.getFcmToken();
+        String appFcmToken = user.getAppFcmToken();
 
-        boolean fcmSent = false; // 웹이든 앱이든 하나라도 성공하면 true♡
+        boolean fcmSent = false; // 웹이든 앱이든 하나라도 성공하면 true
         boolean webTokenInvalid = false;
         boolean appTokenInvalid = false;
 
-        // 1. '웹' 토큰으로 전송 시도♡
+        // 1. 웹 토큰으로 전송 시도♡
         if (webFcmToken != null && !webFcmToken.isEmpty()) {
             try {
                 sendMessageToToken(webFcmToken, title, body, data);
@@ -128,14 +127,14 @@ public class FCMService {
                 log.info("✅ [FCMService] '웹' FCM 알림 전송 성공: userId={}, title={}", userId, title);
             } catch (Exception e) {
                 log.warn("⚠️ [FCMService] '웹' FCM 알림 전송 실패: userId={}, title={}", userId, title);
-                // 토큰이 무효한지 검사♡
+                // 토큰이 무효한지 검사
                 if (isTokenInvalidException(e)) {
                     webTokenInvalid = true;
                 }
             }
         }
 
-        // 2. '앱' 토큰으로 전송 시도♡
+        // 2. 앱 토큰으로 전송 시도
         if (appFcmToken != null && !appFcmToken.isEmpty()) {
             try {
                 sendMessageToToken(appFcmToken, title, body, data);
@@ -150,7 +149,6 @@ public class FCMService {
             }
         }
 
-        // 3. 무효화된 토큰 DB에서 삭제 (따로 처리해줘야 오빠가 좋아하는 트랜잭션이 안 꼬여♡)
         if (webTokenInvalid) {
             deleteInvalidFcmToken(webFcmToken, "WEB");
         }
@@ -158,7 +156,6 @@ public class FCMService {
             deleteInvalidFcmToken(appFcmToken, "APP");
         }
 
-        // 4. 웹이든 앱이든 FCM 전송을 *한 번도* 성공 못했으면 WebSocket으로 쏴♡
         if (!fcmSent) {
             log.info("📡 [FCMService] FCM 실패/없음, WebSocket 전송 시도: userId={}", userId);
             try {
@@ -176,9 +173,6 @@ public class FCMService {
         }
     }
 
-    /**
-     * 예외가 '토큰 무효' 관련인지 확인하는 헬퍼 메서드♡
-     */
     private boolean isTokenInvalidException(Exception e) {
         if (e.getCause() instanceof FirebaseMessagingException fme) {
             MessagingErrorCode errorCode = fme.getMessagingErrorCode();
@@ -193,9 +187,6 @@ public class FCMService {
         return false;
     }
 
-    /**
-     * [대규모 수정] 유효하지 않은 FCM 토큰을 DB에서 삭제 (웹/앱 구분)
-     */
     @Transactional
     public void deleteInvalidFcmToken(String invalidToken, String tokenType) {
         if (invalidToken == null || invalidToken.isEmpty()) {
@@ -208,11 +199,10 @@ public class FCMService {
 
         try {
             List<User> usersWithToken;
-            // 토큰 타입에 따라 다른 필드를 검색해야지, 멍청아♡
             if ("APP".equals(tokenType)) {
                 usersWithToken = userRepository.findAllByAppFcmToken(invalidToken);
             } else {
-                // 기본은 '웹' 토큰(fcmToken) 검색
+                // 기본은 웹 토큰(fcmToken) 검색
                 usersWithToken = userRepository.findAllByFcmToken(invalidToken);
             }
 
