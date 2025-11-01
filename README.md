@@ -26,7 +26,7 @@
 - **TMAP API**: 대중교통 경로 및 지도 서비스
 - **Google Calendar API**: 일정 관리
 - **OpenWeatherMap API**: 날씨 정보
-- **ExaOne AI API**: 인공지능 서비스
+- **OpenAI API**: 인공지능 서비스
 
 ### ☁️ 인프라 & 배포
 - **AWS EC2**: 서버 호스팅
