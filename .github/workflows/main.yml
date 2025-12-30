@@ -13,7 +13,7 @@ jobs:
       IMAGE_NAME: igo-backend
       CONTAINER_BLUE: backend-blue
       CONTAINER_GREEN: backend-green
-      NGINX_TARGET_FILE: /etc/nginx/conf.d/backend.target # 타겟 파일 경로를 변수로 관리
+      NGINX_TARGET_FILE: /etc/nginx/conf.d/backend.target # 타겟 파일 경로 변수로 관리
 
     steps:
       - name: Checkout code
