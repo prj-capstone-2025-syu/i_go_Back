@@ -13,7 +13,7 @@ jobs:
       IMAGE_NAME: igo-backend
       CONTAINER_BLUE: backend-blue
       CONTAINER_GREEN: backend-green
-      NGINX_TARGET_FILE: /etc/nginx/conf.d/backend.target # 타겟 파일 경로 변수로 관리
+      NGINX_TARGET_FILE: /etc/nginx/conf.d/backend.target
 
     steps:
       - name: Checkout code
@@ -68,13 +68,11 @@ jobs:
             sudo docker load -i backend-image.tar
             rm -f backend-image.tar
             
-            # Docker Compose 네트워크가 없으면 생성
             if ! sudo docker network ls | grep -q igo_default; then
               sudo docker network create igo_default
               echo "Created igo_default network"
             fi
             
-            # MySQL 컨테이너 네트워크 확인
             MYSQL_NETWORK=$(sudo docker inspect $(sudo docker ps --filter "expose=3306" -q) --format='{{range $k, $v := .NetworkSettings.Networks}}{{$k}}{{end}}' | head -1)
   
             if [ -z "$MYSQL_NETWORK" ]; then
@@ -84,34 +82,24 @@ jobs:
   
             echo "MySQL is running on network: $MYSQL_NETWORK"
             
-            # Blue와 Green 컨테이너의 고정 포트 설정
             BLUE_PORT=8080
             GREEN_PORT=8081
             
-            # 현재 실행 중인 컨테이너 확인
             if sudo docker ps | grep -q ${{ env.CONTAINER_BLUE }}; then
               ACTIVE_CONTAINER=${{ env.CONTAINER_BLUE }}
               NEW_CONTAINER=${{ env.CONTAINER_GREEN }}
               NEW_PORT=$GREEN_PORT
-              echo "Blue is currently active on port $BLUE_PORT, deploying Green on port $GREEN_PORT"
             elif sudo docker ps | grep -q ${{ env.CONTAINER_GREEN }}; then
               ACTIVE_CONTAINER=${{ env.CONTAINER_GREEN }}
               NEW_CONTAINER=${{ env.CONTAINER_BLUE }}
               NEW_PORT=$BLUE_PORT
-              echo "Green is currently active on port $GREEN_PORT, deploying Blue on port $BLUE_PORT"
             else
-              # 처음 배포인 경우
               ACTIVE_CONTAINER=""
               NEW_CONTAINER=${{ env.CONTAINER_BLUE }}
               NEW_PORT=$BLUE_PORT
-              echo "No active container found, deploying Blue on port $BLUE_PORT"
             fi
 
-            echo "Active: $ACTIVE_CONTAINER, Deploying: $NEW_CONTAINER to port $NEW_PORT"
-            
-            # 새로 배포할 컨테이너가 이미 존재하면 정리 (동일 이름 컨테이너 방지)
             if sudo docker ps -a | grep -q "^.*$NEW_CONTAINER\s"; then
-              echo "Cleaning up existing $NEW_CONTAINER container..."
               sudo docker stop $NEW_CONTAINER || true
               sudo docker rm $NEW_CONTAINER || true
             fi
@@ -126,7 +114,6 @@ jobs:
               --restart unless-stopped \
               ${{ env.IMAGE_NAME }}:${{ github.sha }}
             
-            echo "Waiting for health check..."
             HEALTH_CHECK_PASSED=false
             for i in $(seq 1 60); do
               if curl -s -f http://localhost:$NEW_PORT/actuator/health > /dev/null; then
@@ -138,23 +125,18 @@ jobs:
             done
             
             if [ "$HEALTH_CHECK_PASSED" = "true" ]; then
-              echo "Health check passed. Switching traffic..."
               echo "server 127.0.0.1:$NEW_PORT;" | sudo tee ${{ env.NGINX_TARGET_FILE }}
               sudo nginx -t && sudo systemctl reload nginx
               
               if [ ! -z "$ACTIVE_CONTAINER" ] && [ ! -z "$(sudo docker ps -q --filter "name=^${ACTIVE_CONTAINER}$")" ]; then
-                echo "Stopping old container: $ACTIVE_CONTAINER"
                 sleep 5
                 sudo docker stop $ACTIVE_CONTAINER || true
                 sudo docker rm $ACTIVE_CONTAINER || true
               fi
               sudo docker image prune -a -f
               sudo docker builder prune -f
-              echo "Blue-Green deployment completed successfully!"
             else
-              echo "Health check failed after multiple attempts. Check container logs for errors."
               sudo docker logs $NEW_CONTAINER
-              echo "Rolling back..."
               sudo docker stop $NEW_CONTAINER || true
               sudo docker rm $NEW_CONTAINER || true
               exit 1
