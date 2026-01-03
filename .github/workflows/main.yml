@@ -133,7 +133,7 @@ jobs:
                 HEALTH_CHECK_PASSED=true
                 break
               fi
-              echo "Health check attempt $i failed. Retrying in 10 seconds..."
+              echo "Health check attempt $i failed. Retrying in 60 seconds..."
               sleep 60
             done
             
