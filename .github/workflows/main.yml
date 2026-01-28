@@ -13,7 +13,7 @@ jobs:
       IMAGE_NAME: igo-backend
       CONTAINER_BLUE: backend-blue
       CONTAINER_GREEN: backend-green
-      NGINX_TARGET_FILE: /etc/nginx/conf.d/backend.target # 타겟 파일 경로 변수로 관리
+      NGINX_TARGET_FILE: /etc/nginx/conf.d/backend.target
 
     steps:
       - name: Checkout code
@@ -45,7 +45,8 @@ jobs:
 
       - name: Build Docker Image
         run: |
-          docker build -t ${{ env.IMAGE_NAME }}:${{ github.sha }} .
+          # 플랫폼을 명시하여 호환성 문제 방지
+          docker build --platform linux/amd64 -t ${{ env.IMAGE_NAME }}:${{ github.sha }} .
           docker save ${{ env.IMAGE_NAME }}:${{ github.sha }} -o backend-image.tar
 
       - name: Copy Docker Image to EC2
@@ -63,10 +64,20 @@ jobs:
           host: ${{ secrets.EC2_HOST }}
           username: ${{ secrets.EC2_USER }}
           key: ${{ secrets.EC2_SSH_KEY }}
+          timeout: 40m 
           script: |
             cd /home/ubuntu/igo
-            sudo docker load -i backend-image.tar
-            rm -f backend-image.tar
+            
+            echo "1. Loading Docker Image..."
+            # 로드 실패 시 파일 삭제
+            if sudo docker load -i backend-image.tar; then
+              echo "Image loaded successfully."
+              rm -f backend-image.tar
+            else
+              echo "Error: Failed to load image. Cleaning up..."
+              rm -f backend-image.tar
+              exit 1
+            fi
             
             # Docker Compose 네트워크가 없으면 생성
             if ! sudo docker network ls | grep -q igo_default; then
@@ -84,11 +95,10 @@ jobs:
   
             echo "MySQL is running on network: $MYSQL_NETWORK"
             
-            # Blue와 Green 컨테이너의 고정 포트 설정
             BLUE_PORT=8080
             GREEN_PORT=8081
             
-            # 현재 실행 중인 컨테이너 확인
+            # 현재 실행 중인 컨테이너 확인 및 타겟 결정
             if sudo docker ps | grep -q ${{ env.CONTAINER_BLUE }}; then
               ACTIVE_CONTAINER=${{ env.CONTAINER_BLUE }}
               NEW_CONTAINER=${{ env.CONTAINER_GREEN }}
@@ -100,37 +110,39 @@ jobs:
               NEW_PORT=$BLUE_PORT
               echo "Green is currently active on port $GREEN_PORT, deploying Blue on port $BLUE_PORT"
             else
-              # 처음 배포인 경우
               ACTIVE_CONTAINER=""
               NEW_CONTAINER=${{ env.CONTAINER_BLUE }}
               NEW_PORT=$BLUE_PORT
               echo "No active container found, deploying Blue on port $BLUE_PORT"
             fi
 
-            echo "Active: $ACTIVE_CONTAINER, Deploying: $NEW_CONTAINER to port $NEW_PORT"
-            
-            # 새로 배포할 컨테이너가 이미 존재하면 정리 (동일 이름 컨테이너 방지)
+            # 기존에 정리가 덜 된 동일 이름 컨테이너 강제 정리
             if sudo docker ps -a | grep -q "^.*$NEW_CONTAINER\s"; then
               echo "Cleaning up existing $NEW_CONTAINER container..."
               sudo docker stop $NEW_CONTAINER || true
               sudo docker rm $NEW_CONTAINER || true
             fi
             
-            # 새 컨테이너 시작
+            echo "2. Starting New Container ($NEW_CONTAINER)..."
+            # JAVA_TOOL_OPTIONS를 통해 힙 메모리 제한
             sudo docker run -d \
               --name $NEW_CONTAINER \
               --network $MYSQL_NETWORK \
               -p $NEW_PORT:8080 \
+              -e JAVA_TOOL_OPTIONS="-Xmx1536m -Xms1024m" \
               --memory="2g" \
-              --memory-swap="4g" \
+              --memory-swap="3g" \
               --restart unless-stopped \
               ${{ env.IMAGE_NAME }}:${{ github.sha }}
             
-            echo "Waiting for health check..."
+            echo "3. Health Checking..."
             HEALTH_CHECK_PASSED=false
+            
+            # 60s 간격으로 10회 시도 (600s)
             for i in $(seq 1 10); do
-              if curl -s -f http://localhost:$NEW_PORT/actuator/health > /dev/null; then
+              if curl --connect-timeout 5 -s -f http://localhost:$NEW_PORT/actuator/health > /dev/null; then
                 HEALTH_CHECK_PASSED=true
+                echo "Health check passed at attempt $i!"
                 break
               fi
               echo "Health check attempt $i failed. Retrying in 60 seconds..."
@@ -138,26 +150,34 @@ jobs:
             done
             
             if [ "$HEALTH_CHECK_PASSED" = "true" ]; then
-              echo "Health check passed. Switching traffic..."
+              echo "4. Switching Traffic..."
               echo "server 127.0.0.1:$NEW_PORT;" | sudo tee ${{ env.NGINX_TARGET_FILE }}
               sudo nginx -t && sudo systemctl reload nginx
               
+              # 기존 컨테이너 종료
               if [ ! -z "$ACTIVE_CONTAINER" ] && [ ! -z "$(sudo docker ps -q --filter "name=^${ACTIVE_CONTAINER}$")" ]; then
+                echo "Waiting 15s for old container connections to drain..."
+                sleep 15
                 echo "Stopping old container: $ACTIVE_CONTAINER"
-                sleep 5
                 sudo docker stop $ACTIVE_CONTAINER || true
                 sudo docker rm $ACTIVE_CONTAINER || true
               fi
+              
+              # 사용 안되는 이미지 삭제 
+              echo "5. Cleaning up unused images..."
               sudo docker image prune -a -f
               sudo docker builder prune -f
               echo "Blue-Green deployment completed successfully!"
+              
             else
-              echo "Health check failed after multiple attempts. Check container logs for errors."
-              sudo docker logs $NEW_CONTAINER
+              echo "Health check failed. Check logs below:"
+              sudo docker logs --tail 50 $NEW_CONTAINER
+              
               echo "Rolling back..."
               sudo docker stop $NEW_CONTAINER || true
               sudo docker rm $NEW_CONTAINER || true
               exit 1
             fi
             
+            # 잔여 이미지 최종 정리
             sudo docker image prune -f
